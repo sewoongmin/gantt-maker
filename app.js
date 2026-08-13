@@ -4,9 +4,9 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'gantt-config-v5';
-  var BASELINE_KEY = 'gantt-baseline-v5';
-  var VERSIONS_KEY = 'gantt-versions-v5';
+  var STORAGE_KEY = 'gantt-config-v6';
+  var BASELINE_KEY = 'gantt-baseline-v6';
+  var VERSIONS_KEY = 'gantt-versions-v6';
   var MAX_VERSIONS = 20;
 
   var chartEl = document.getElementById('chart');

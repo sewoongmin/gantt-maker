@@ -34,204 +34,331 @@
  * ========================================================================== */
 
 window.GANTT_CONFIG = {
-  title: '',
-  subtitle: '',
-
-  range: { start: '2026-Q2', end: '2029-Q2' },
-  periodLabels: ['1Q', '2Q', '3Q', '4Q'],
-  cornerLabel: '일자',
-
-  palette: [
-    { name: 'sky', label: '하늘색', color: '#9DC3E6' },
-    { name: 'navy', label: '남색', color: '#1F3864' },
-    { name: 'blue', label: '파랑', color: '#2E75B6' },
-    { name: 'steel', label: '연한 남색', color: '#8FAADC' },
-    { name: 'teal', label: '청록', color: '#2A9D8F' },
-    { name: 'green', label: '초록', color: '#548235' },
-    { name: 'gold', label: '금색', color: '#BF9000' },
-    { name: 'orange', label: '주황', color: '#E36C0A' },
-    { name: 'red', label: '빨강', color: '#FF0000' },
-    { name: 'crimson', label: '진한 빨강', color: '#C00000' },
-    { name: 'purple', label: '보라', color: '#7030A0' },
-    { name: 'gray', label: '회색', color: '#808080' }
+  "title": "",
+  "subtitle": "",
+  "range": {
+    "start": "2026-Q2",
+    "end": "2029-Q1"
+  },
+  "periodLabels": [
+    "1Q",
+    "2Q",
+    "3Q",
+    "4Q"
   ],
-
-  barColorCycle: ['sky', 'navy'],
-
-  colors: {
-    header: '#404040',
-    subHeader: '#F2F2F2',
-    grid: '#D0D4DB',
-    gridYear: '#A8ADB6',
-    gridPeriod: '#D4D8DF',
-    rowAlt: '#F5F7FB',      // 격행 음영 (옅게)
-    text: '#000000'
-  },
-
-  layout: {
-    padding: 24,
-    labelColWidth: 152,
-    periodWidth: 74,
-    yearHeaderHeight: 34,
-    periodHeaderHeight: 30,
-    rowHeight: 86,
-    rowPadding: 9,
-    rowMilestoneOffset: -10,
-    calloutTextGap: 10,
-    showPeriodGrid: true,
-    periodGridStyle: 'solid',
-    showYearGrid: true,
-    zebra: true,
-    zebraStart: 1
-  },
-
-  rows: [
+  "cornerLabel": "일자",
+  "palette": [
     {
-      label: '비행시험',
-      bars: [
-        {
-          id: 'b-flight-1',
-          start: '2026-Q3.25', end: '2027-Q1.25',
-          capStart: 'circle', capEnd: 'none',
-          label: '비행 계획 수립', labelAt: 0.5
-        },
-        {
-          id: 'b-flight-2',
-          start: '2027-Q1.25', end: '2027-Q3',
-          capStart: 'none', capEnd: 'circle',
-          label: '임무 비행 (Phase-I)', labelAt: 0.5
-        },
-        {
-          id: 'b-flight-3',
-          start: '2027-Q3', end: '2029-Q1.5', color: 'gold',
-          capStart: 'none', capEnd: 'circle',
-          label: '임무 비행 (Phase-II, 체계 통합)', labelAt: 0.5
-        }
-      ],
-      markers: [
-        {
-          id: 'm-first-flight',
-          at: '2027-Q1.25', type: 'filled', color: 'navy', size: 5.5,
-          label: '초도 비행\n(수동 조종)', labelPos: 'above'
-        }
-      ]
+      "name": "sky",
+      "label": "하늘색",
+      "color": "#9DC3E6"
     },
-
     {
-      label: '상황인지 /\n동적의사결정',
-      bars: [
-        {
-          id: 'b-sa-1',
-          start: '2026-Q2.25', end: '2027-Q1.25',
-          capStart: 'circle', capEnd: 'none',
-          label: 'VPS 프로토타입 개발', labelAt: 0.5
-        },
-        {
-          id: 'b-sa-2',
-          start: '2027-Q1.25', end: '2027-Q3',
-          capStart: 'none', capEnd: 'circle',
-          label: '실기체 연동 VPS 개발', labelAt: 0.5
-        },
-        {
-          id: 'b-sa-3',
-          start: '2027-Q3', end: '2028-Q1.75',
-          capStart: 'none', capEnd: 'circle',
-          label: '정밀도 향상 및 최적화', labelAt: 0.5
-        },
-        {
-          id: 'b-sa-4',
-          start: '2028-Q1.75', end: '2029-Q2.75', color: 'gold',
-          capStart: 'circle', capEnd: 'circle',
-          label: '반복 비행시험 및 기술 고도화', labelAt: 0.5
-        }
-      ],
-      markers: [
-        { id: 'm-sa-sync', at: '2027-Q1.25', type: 'filled', color: 'navy', size: 5.5 }
-      ],
-      deliverables: [
-        { id: 'd-vps', at: '2027-Q2.5', label: 'VPS SW v1.0' }
-      ]
+      "name": "navy",
+      "label": "남색",
+      "color": "#1F3864"
     },
-
     {
-      label: '검증',
-      bars: [
-        {
-          id: 'b-ver-1',
-          start: '2026-Q2.25', end: '2027-Q1.25',
-          capStart: 'circle', capEnd: 'none',
-          label: '통합 항법 프로토타입 개발', labelAt: 0.5
-        },
-        {
-          id: 'b-ver-2',
-          start: '2027-Q1.25', end: '2027-Q3',
-          capStart: 'none', capEnd: 'circle',
-          label: '센서 융합 상태 추정', labelAt: 0.5
-        },
-        {
-          id: 'b-ver-3',
-          start: '2027-Q3', end: '2028-Q1.75',
-          capStart: 'none', capEnd: 'circle',
-          label: '적응형 항법 및 상태추정 고도화', labelAt: 0.5
-        },
-        {
-          id: 'b-ver-4',
-          start: '2028-Q1.75', end: '2029-Q2.75', color: 'gold',
-          capStart: 'circle', capEnd: 'circle',
-          label: '반복 비행시험 및 기술 고도화', labelAt: 0.5
-        }
-      ],
-      markers: [
-        { id: 'm-ver-sync', at: '2027-Q1.25', type: 'filled', color: 'navy', size: 5.5 }
-      ],
-      deliverables: [
-        { id: 'd-report', at: '2027-Q4.25', label: '비행시험 결과보고서' }
-      ]
+      "name": "blue",
+      "label": "파랑",
+      "color": "#2E75B6"
+    },
+    {
+      "name": "steel",
+      "label": "연한 남색",
+      "color": "#8FAADC"
+    },
+    {
+      "name": "teal",
+      "label": "청록",
+      "color": "#2A9D8F"
+    },
+    {
+      "name": "green",
+      "label": "초록",
+      "color": "#548235"
+    },
+    {
+      "name": "gold",
+      "label": "금색",
+      "color": "#BF9000"
+    },
+    {
+      "name": "orange",
+      "label": "주황",
+      "color": "#E36C0A"
+    },
+    {
+      "name": "red",
+      "label": "빨강",
+      "color": "#FF0000"
+    },
+    {
+      "name": "crimson",
+      "label": "진한 빨강",
+      "color": "#C00000"
+    },
+    {
+      "name": "purple",
+      "label": "보라",
+      "color": "#7030A0"
+    },
+    {
+      "name": "gray",
+      "label": "회색",
+      "color": "#808080"
     }
   ],
-
-  milestones: [
+  "barColorCycle": [
+    "sky",
+    "navy"
+  ],
+  "colors": {
+    "header": "#404040",
+    "subHeader": "#F2F2F2",
+    "grid": "#D0D4DB",
+    "gridYear": "#A8ADB6",
+    "gridPeriod": "#D4D8DF",
+    "rowAlt": "#F5F7FB",
+    "text": "#000000"
+  },
+  "layout": {
+    "padding": 24,
+    "labelColWidth": 152,
+    "periodWidth": 74,
+    "yearHeaderHeight": 34,
+    "periodHeaderHeight": 30,
+    "rowHeight": 86,
+    "rowPadding": 9,
+    "rowMilestoneOffset": 24,
+    "showPeriodGrid": true,
+    "periodGridStyle": "solid",
+    "showYearGrid": true,
+    "zebra": true,
+    "zebraStart": 1
+  },
+  "rows": [
     {
-      id: 'ms-contract',
-      at: '2026-Q3.25', row: 2, color: 'steel', line: 'dashed', fromRow: 0, toRow: 2,
-      title: '외주 용역 계약',
-      items: ['KAIST 산학', '항공대 산학', 'Vantor']
+      "label": "비행시험",
+      "bars": [
+        {
+          "id": "b-flight-1",
+          "start": "2026-Q3",
+          "end": "2026-Q4",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "label": "비행 계획 \n수립",
+          "labelAt": 0.5
+        },
+        {
+          "id": "b-flight-2",
+          "start": "2026-Q4",
+          "end": "2027-Q1",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "label": "초도 비행\n(수동 조종)",
+          "labelAt": 0.5,
+          "compareHidden": true,
+          "labelDy": -12
+        },
+        {
+          "id": "b-flight-3",
+          "start": "2027-Q4",
+          "end": "2029-Q1",
+          "color": "gold",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "label": "임무 비행 (Phase-II, 체계 통합)",
+          "labelAt": 0.5,
+          "labelDy": -12
+        },
+        {
+          "id": "bar-msppr444",
+          "start": "2027-Q1",
+          "end": "2027-Q2",
+          "label": "기본비행\n(GCS 기반)",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "labelAt": 0.5,
+          "compareHidden": true
+        },
+        {
+          "id": "bar-mspprnjb",
+          "start": "2027-Q2",
+          "end": "2027-Q4",
+          "label": "임무비행 (Phase-I)",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "labelAt": 0.5,
+          "compareHidden": true
+        }
+      ],
+      "markers": [],
+      "height": 41
     },
     {
-      id: 'ms-mid',
-      at: '2027-Q3', row: 1, color: 'red', line: 'dashed', fromRow: 0, toRow: 1,
-      title: '실기체 연동\n중간 점검'
+      "label": "상황인지 /\n동적의사결정",
+      "bars": [
+        {
+          "id": "b-sa-1",
+          "start": "2026-Q3",
+          "end": "2026-Q4",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "label": "시뮬레이션\n환경 구축",
+          "labelAt": 0.5,
+          "labelDy": -14
+        },
+        {
+          "id": "b-sa-2",
+          "start": "2026-Q4",
+          "end": "2027-Q2",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "label": "계층적 RL 모델 학습\n및 고도화",
+          "labelAt": 0.5,
+          "compareOffsetDy": 0,
+          "compareHidden": true
+        },
+        {
+          "id": "b-sa-3",
+          "start": "2027-Q2",
+          "end": "2027-Q4",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "label": "SILS 환경설계\n및 학습",
+          "labelAt": 0.5,
+          "labelDy": -16
+        },
+        {
+          "id": "b-sa-4",
+          "start": "2028-Q1",
+          "end": "2029-Q1",
+          "color": "gold",
+          "capStart": "circle",
+          "capEnd": "circle",
+          "label": "실 환경 성능 검증 / \n기술 고도화",
+          "labelAt": 0.5,
+          "compareOffsetDy": -18
+        },
+        {
+          "id": "bar-mspq2xx0",
+          "start": "2027-Q4",
+          "end": "2028-Q1",
+          "label": "HILS 환경설계\n및 고도화",
+          "labelAt": 0.5,
+          "capStart": "circle",
+          "capEnd": "circle",
+          "compareOffsetDy": 8,
+          "labelDy": -12,
+          "compareHidden": true
+        }
+      ],
+      "markers": [],
+      "deliverables": [],
+      "height": 69
     },
     {
-      id: 'ms-twin',
-      at: '2027-Q1.25', row: 2, color: 'red', line: 'dashed', fromRow: 0, toRow: 2,
-      title: '디지털트윈 통합'
-    },
-    {
-      id: 'ms-flight',
-      at: '2028-Q1.75', row: 2, color: 'red', line: 'dashed', fromRow: 1, toRow: 2,
-      title: '목표 기체 체계 통합\n비행 테스트'
+      "label": "검증",
+      "bars": [],
+      "markers": [],
+      "deliverables": [],
+      "height": 72
     }
   ],
-
-  /* 변경 비교 표시 스타일 — 아래 차트 알약/범례 클릭으로도 수정 가능 */
-  compareStyle: {
-    add: { fill: '#E11D48', label: '추가' },
-    shorten: { fill: '#EF4444', label: '단축' },
-    delay: { fill: '#EA580C', label: '지연' },
-    ghost: { fill: '#FB7185', label: '기존 일정' }
+  "milestones": [
+    {
+      "id": "ms-contract",
+      "at": "2027-Q2",
+      "row": 2,
+      "color": "steel",
+      "line": "dashed",
+      "fromRow": 0,
+      "toRow": 2,
+      "title": "디지털 트윈 환경 통합",
+      "titleDy": 10
+    },
+    {
+      "id": "ms-flight",
+      "at": "2028-Q3",
+      "row": 2,
+      "color": "red",
+      "line": "dashed",
+      "fromRow": 0,
+      "toRow": 2,
+      "title": "실 환경\n기술 데모",
+      "compareOffsetDy": 58,
+      "titleDy": 10
+    },
+    {
+      "id": "ms-mspq5ijh",
+      "at": "2027-Q4",
+      "color": "steel",
+      "line": "dashed",
+      "fromRow": 0,
+      "toRow": 2,
+      "row": 2,
+      "title": "SILS 환경\n성능 검증",
+      "titleDy": 10
+    },
+    {
+      "id": "ms-mspq620k",
+      "at": "2028-Q1",
+      "color": "red",
+      "line": "dashed",
+      "fromRow": 0,
+      "toRow": 2,
+      "row": 2,
+      "title": "시뮬레이션\n기반 기술 데모",
+      "compareOffsetDy": 56,
+      "titleDy": 10
+    }
+  ],
+  "compareStyle": {
+    "add": {
+      "fill": "#E11D48",
+      "label": "추가"
+    },
+    "shorten": {
+      "fill": "#EF4444",
+      "label": "단축"
+    },
+    "delay": {
+      "fill": "#EA580C",
+      "label": "지연"
+    },
+    "ghost": {
+      "fill": "#FB7185",
+      "label": "기존 일정"
+    }
   },
-
-  legend: {
-    show: true,
-    title: '범례',
-    items: [
-      { type: 'lineAlt', colors: ['sky', 'navy'], label: '연구개발 수행 구간 (구간 구분을 위해 색 교대)' },
-      { type: 'line', color: 'gold', label: '체계 통합 · 반복 비행시험 구간' },
-      { type: 'marker', marker: 'filled', color: 'navy', label: '주요 이벤트 (초도 비행 등)' },
-      { type: 'milestone', color: 'red', label: '핵심 마일스톤 (검증 이벤트)' },
-      { type: 'triangle', color: 'steel', label: '계약 · 행정 이벤트' },
-      { type: 'marker', marker: 'diamond', color: 'green', label: '산출물 (문서 · SW 릴리스)' }
+  "legend": {
+    "show": true,
+    "title": "범례",
+    "items": [
+      {
+        "type": "lineAlt",
+        "colors": [
+          "sky",
+          "navy"
+        ],
+        "label": "알고리즘 개발"
+      },
+      {
+        "type": "line",
+        "color": "gold",
+        "label": "체계 통합 · 고도화"
+      },
+      {
+        "type": "milestone",
+        "color": "red",
+        "label": "핵심 마일스톤 (데모)"
+      },
+      {
+        "type": "triangle",
+        "color": "steel",
+        "label": "개발 마일스톤"
+      }
     ]
   }
 };
