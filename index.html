@@ -20,6 +20,16 @@
         <select id="rangeEndPeriod"></select>
       </span>
       <span class="sep"></span>
+      <label class="field check" title="미래처럼 내용이 비슷한 연도를 물결 끊음으로 좁혀 글자가 작아지지 않게 합니다">
+        <input type="checkbox" id="compressOn" />
+        기간 축약
+      </label>
+      <span class="field compress-years" id="compressYears">
+        <select id="compressStartYear"></select>
+        <span class="tilde">~</span>
+        <select id="compressEndYear"></select>
+      </span>
+      <span class="sep"></span>
       <label class="field">
         이동 단위
         <select id="snap">
@@ -96,6 +106,7 @@
     클릭하면 색을 바꿀 수 있고, 드래그·↑↓로 높이를 조절할 수 있습니다.
     <b>버전 저장</b>으로 원하는 시점(초안·최종안 등)을 남겨 두고, <b>이 버전으로</b> / <b>변경 전으로</b> 돌아갈 수 있습니다.
     <b>간트 내보내기 / 불러오기</b>로 일정을 파일로 보관·이어서 수정하세요.
+    <b>기간 축약</b>으로 2028~2029처럼 비슷한 연도를 물결로 접으면 그림이 짧아지고 글자가 커집니다.
     <b>Delete</b> 삭제 · <b>Shift+↑↓</b> 큰 이동 · <b>Ctrl+Z</b> 되돌리기.
   </p>
 

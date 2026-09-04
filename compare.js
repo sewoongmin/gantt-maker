@@ -402,6 +402,7 @@
     var L = api.layout;
 
     function xOf(t) {
+      if (api.xOf) return api.xOf(t);
       return api.plotX + scale.clamp(typeof t === 'number' ? t : scale.parse(t)) * L.periodWidth;
     }
 

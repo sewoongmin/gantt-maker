@@ -41,6 +41,7 @@ body {
 .brand { font-size: 15px; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
 .tilde { color: var(--muted); }
+.compress-years.is-off { opacity: 0.45; }
 
 .field { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
 .field.check { color: var(--ink); }

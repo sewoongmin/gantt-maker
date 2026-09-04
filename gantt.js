@@ -192,6 +192,121 @@
     };
   }
 
+  /* 미래 연도처럼 칸이 많은 구간을 좁은 폭 + 물결 끊음으로 접습니다 */
+  function makeVisualMap(scale, cfg) {
+    var compress = cfg.compress || {};
+    var P = scale.periods;
+    function yearNum(v) {
+      if (v === null || v === undefined || v === '') return NaN;
+      var n = +v;
+      return isFinite(n) ? n : NaN;
+    }
+    var sy = yearNum(compress.startYear);
+    var ey = yearNum(compress.endYear);
+    if (!isFinite(sy) && compress.start) sy = Math.floor(scale.parseAbs(compress.start) / P);
+    if (!isFinite(ey) && compress.end) ey = Math.floor(scale.parseAbs(compress.end) / P);
+    if (isFinite(sy) && isFinite(ey) && ey < sy) {
+      var swap = sy;
+      sy = ey;
+      ey = swap;
+    }
+
+    var c0 = 0;
+    var c1 = 0;
+    var vw = 0;
+    var enabled = !!(compress.enabled && isFinite(sy) && isFinite(ey));
+    if (enabled) {
+      var abs0 = Math.max(scale.startAbs, sy * P);
+      var abs1 = Math.min(scale.endAbs, (ey + 1) * P);
+      c0 = abs0 - scale.startAbs;
+      c1 = abs1 - scale.startAbs;
+      var span = c1 - c0;
+      if (span < 1.05 || (c0 <= 0.001 && c1 >= scale.total - 0.001)) {
+        enabled = false;
+      } else {
+        var years = Math.max(1, ey - sy + 1);
+        vw = pick(compress.width, Math.max(1.7, years * 0.55));
+      }
+    }
+
+    var visualTotal = enabled ? c0 + vw + (scale.total - c1) : scale.total;
+
+    function tToV(t) {
+      t = scale.clamp(t);
+      if (!enabled) return t;
+      if (t <= c0) return t;
+      if (t >= c1) return c0 + vw + (t - c1);
+      return c0 + ((t - c0) / (c1 - c0)) * vw;
+    }
+
+    function vToT(v) {
+      if (!enabled) return v;
+      if (v <= c0) return Math.max(0, v);
+      if (v >= c0 + vw) return Math.min(scale.total, c1 + (v - c0 - vw));
+      return c0 + ((v - c0) / vw) * (c1 - c0);
+    }
+
+    return {
+      enabled: enabled,
+      startYear: sy,
+      endYear: ey,
+      c0: c0,
+      c1: c1,
+      vw: vw,
+      visualTotal: visualTotal,
+      tToV: tToV,
+      vToT: vToT
+    };
+  }
+
+  function yearBands(scale, visual) {
+    var P = scale.periods;
+    var bands = [];
+    var y = scale.firstYear;
+    while (y <= scale.lastYear) {
+      if (visual.enabled && y >= visual.startYear && y <= visual.endYear) {
+        var last = Math.min(visual.endYear, scale.lastYear);
+        var fromY = Math.max(visual.startYear, scale.firstYear);
+        bands.push({
+          label: fromY === last ? String(last) : fromY + '–' + last,
+          fromAbs: Math.max(scale.startAbs, fromY * P),
+          toAbs: Math.min(scale.endAbs, (last + 1) * P),
+          compressed: true
+        });
+        y = last + 1;
+      } else {
+        bands.push({
+          label: String(y),
+          fromAbs: Math.max(scale.startAbs, y * P),
+          toAbs: Math.min(scale.endAbs, (y + 1) * P),
+          compressed: false
+        });
+        y += 1;
+      }
+    }
+    return bands;
+  }
+
+  function wavePath(points) {
+    if (!points.length) return '';
+    var d = 'M ' + points[0][0] + ' ' + points[0][1];
+    var i;
+    for (i = 1; i < points.length; i++) d += ' L ' + points[i][0] + ' ' + points[i][1];
+    return d;
+  }
+
+  function sineSamples(x0, y0, y1, amp, period) {
+    var h = Math.max(1, y1 - y0);
+    var steps = Math.max(12, Math.ceil(h / 2));
+    var out = [];
+    var i;
+    for (i = 0; i <= steps; i++) {
+      var y = y0 + (h * i) / steps;
+      out.push([x0 + Math.sin(((y - y0) / period) * Math.PI * 2) * amp, y]);
+    }
+    return out;
+  }
+
   /* ------------------------------------------------------------- 설정 정규화 */
 
   function normalize(input) {
@@ -216,6 +331,7 @@
     cfg.rows = (cfg.rows || []).slice();
     cfg.milestones = (cfg.milestones || []).slice();
     cfg.legend = merge({ show: true, title: '범례', items: [] }, cfg.legend);
+    cfg.compress = merge({ enabled: false, startYear: null, endYear: null }, cfg.compress);
 
     /* 문구 위치 labelAt: 왼(0.15)/중(0.5)/오(0.85)에 가깝면 정확히 스냅
        (예전 0.4·0.45 등이 UI상 '중앙'으로 보이지만 실제론 안 맞던 문제 보정) */
@@ -401,12 +517,18 @@
     var scale = makeScale(cfg);
     var P = scale.periods;
 
+    var visual = makeVisualMap(scale, cfg);
     var plotX = L.padding + L.labelColWidth;
-    var plotW = scale.total * L.periodWidth;
+    var plotW = visual.visualTotal * L.periodWidth;
     var totalWidth = plotX + plotW + L.padding;
 
+    function xAtT(t) {
+      return plotX + visual.tToV(scale.clamp(t)) * L.periodWidth;
+    }
+
     function xOf(value) {
-      return plotX + scale.clamp(scale.parse(value)) * L.periodWidth;
+      var t = typeof value === 'number' ? value : scale.parse(value);
+      return xAtT(t);
     }
 
     /* ---- 마일스톤을 행 안 / 표 아래로 분류 ---- */
@@ -649,19 +771,18 @@
       { size: 15, weight: 'bold', fill: '#FFFFFF' }
     );
 
-    for (var year = scale.firstYear; year <= scale.lastYear; year++) {
-      var visFrom = Math.max(scale.startAbs, year * P);
-      var visTo = Math.min(scale.endAbs, (year + 1) * P);
-      var x0 = plotX + (visFrom - scale.startAbs) * L.periodWidth;
-      var w = (visTo - visFrom) * L.periodWidth;
+    yearBands(scale, visual).forEach(function (band, bi) {
+      var x0 = xAtT(band.fromAbs - scale.startAbs);
+      var x1 = xAtT(band.toAbs - scale.startAbs);
+      var w = Math.max(1, x1 - x0);
 
       el('rect', { x: x0, y: headerTop, width: w, height: L.yearHeaderHeight, fill: cfg.colors.header }, gHeader);
-      text(gHeader, x0 + w / 2, headerTop + L.yearHeaderHeight / 2 + 6, String(year), {
-        size: 16,
+      text(gHeader, x0 + w / 2, headerTop + L.yearHeaderHeight / 2 + 6, band.label, {
+        size: band.compressed && band.label.length > 4 ? 13.5 : 16,
         weight: 'bold',
         fill: '#FFFFFF'
       });
-      if (year > scale.firstYear) {
+      if (bi > 0) {
         el(
           'line',
           { x1: x0, y1: headerTop, x2: x0, y2: headerTop + L.yearHeaderHeight, stroke: '#FFFFFF', 'stroke-width': 2 },
@@ -669,27 +790,64 @@
         );
       }
 
-      for (var abs = visFrom; abs < visTo; abs++) {
-        var px = plotX + (abs - scale.startAbs) * L.periodWidth;
+      if (band.compressed) {
         el(
           'rect',
           {
-            x: px,
+            x: x0,
             y: periodTop,
-            width: L.periodWidth,
+            width: w,
             height: L.periodHeaderHeight,
-            fill: cfg.colors.subHeader,
+            fill: '#E4E8EE',
             stroke: gridColor,
             'stroke-width': 1
           },
           gHeader
         );
-        text(gHeader, px + L.periodWidth / 2, periodTop + L.periodHeaderHeight / 2 + 4.5, cfg.periodLabels[abs - year * P], {
-          size: 12.5,
-          fill: '#3F3F3F'
-        });
+        var midY = periodTop + L.periodHeaderHeight / 2;
+        var waveW = Math.max(18, w - 16);
+        var wx0 = x0 + (w - waveW) / 2;
+        var dWave = '';
+        var wi;
+        for (wi = 0; wi <= 16; wi++) {
+          var wx = wx0 + (waveW * wi) / 16;
+          var wy = midY + Math.sin((wi / 16) * Math.PI * 4) * 4;
+          dWave += (wi ? ' L ' : 'M ') + wx + ' ' + wy;
+        }
+        el('path', { d: dWave, fill: 'none', stroke: '#6B7280', 'stroke-width': 1.4 }, gHeader);
+        el(
+          'path',
+          { d: dWave, fill: 'none', stroke: '#9CA3AF', 'stroke-width': 1.2, transform: 'translate(0 3)' },
+          gHeader
+        );
+      } else {
+        var abs;
+        for (abs = band.fromAbs; abs < band.toAbs; abs++) {
+          var px = xAtT(abs - scale.startAbs);
+          var pw = xAtT(abs + 1 - scale.startAbs) - px;
+          el(
+            'rect',
+            {
+              x: px,
+              y: periodTop,
+              width: pw,
+              height: L.periodHeaderHeight,
+              fill: cfg.colors.subHeader,
+              stroke: gridColor,
+              'stroke-width': 1
+            },
+            gHeader
+          );
+          text(
+            gHeader,
+            px + pw / 2,
+            periodTop + L.periodHeaderHeight / 2 + 4.5,
+            cfg.periodLabels[abs - Math.floor(abs / P) * P],
+            { size: 12.5, fill: '#3F3F3F' }
+          );
+        }
       }
-    }
+    });
 
     /* ---- 행 배경 / 행 이름 ---- */
     var gRows = el('g', null, svg);
@@ -739,15 +897,16 @@
     /* ---- 세로 격자 ---- */
     var gGrid = el('g', null, svg);
     for (var p = 1; p < scale.total; p++) {
+      if (visual.enabled && p > visual.c0 + 0.001 && p < visual.c1 - 0.001) continue;
       var absIdx = scale.startAbs + p;
       var isYearBoundary = absIdx % P === 0;
       if (isYearBoundary ? !L.showYearGrid : !L.showPeriodGrid) continue;
       el(
         'line',
         {
-          x1: plotX + p * L.periodWidth,
+          x1: xAtT(p),
           y1: plotTop,
-          x2: plotX + p * L.periodWidth,
+          x2: xAtT(p),
           y2: plotBottom,
           stroke: isYearBoundary ? cfg.colors.gridYear : cfg.colors.gridPeriod,
           'stroke-width': isYearBoundary ? 1.25 : 1,
@@ -1284,6 +1443,29 @@
       svg.appendChild(gHit);
     }
 
+    /* ---- 축약 구간 물결 끊음 (막대 위에 그려 잘린 느낌을 냅니다) ---- */
+    if (visual.enabled) {
+      var gBreak = el('g', { 'data-compress': 'break', 'pointer-events': 'none' }, svg);
+      function drawWaveBreak(x) {
+        var amp = 6;
+        var gap = 10;
+        var period = 18;
+        var left = sineSamples(x - gap / 2, headerTop, plotBottom, amp, period);
+        var right = sineSamples(x + gap / 2, headerTop, plotBottom, amp, period);
+        var fillD = wavePath(left);
+        var ri;
+        for (ri = right.length - 1; ri >= 0; ri--) {
+          fillD += ' L ' + right[ri][0] + ' ' + right[ri][1];
+        }
+        fillD += ' Z';
+        el('path', { d: fillD, fill: '#FFFFFF', stroke: 'none' }, gBreak);
+        el('path', { d: wavePath(left), fill: 'none', stroke: '#4B5563', 'stroke-width': 1.5 }, gBreak);
+        el('path', { d: wavePath(right), fill: 'none', stroke: '#4B5563', 'stroke-width': 1.5 }, gBreak);
+      }
+      if (visual.c0 > 0.02) drawWaveBreak(xAtT(visual.c0));
+      if (visual.c1 < scale.total - 0.02) drawWaveBreak(xAtT(visual.c1));
+    }
+
     /* ---- 변경 비교 오버레이 (변경 후 차트에만 전달됨) ---- */
     var compareSummary = null;
     if (options.compareChanges && global.GanttCompare) {
@@ -1299,7 +1481,8 @@
         rowHeights: rowHeights,
         rowBaselines: rowBaselines,
         totalWidth: totalWidth,
-        totalHeight: totalHeight
+        totalHeight: totalHeight,
+        xOf: xOf
       };
       GanttCompare.draw(svg, apiProbe, options.compareChanges, options.compareStyle, interactive);
     }
@@ -1308,6 +1491,7 @@
     svg.__gantt = {
       config: cfg,
       scale: scale,
+      visual: visual,
       layout: L,
       plotX: plotX,
       plotW: plotW,
@@ -1318,7 +1502,7 @@
       rowBaselines: rowBaselines,
       xOf: xOf,
       timeAtX: function (px) {
-        return (px - plotX) / L.periodWidth;
+        return visual.vToT((px - plotX) / L.periodWidth);
       },
       format: scale.format,
       totalWidth: totalWidth,

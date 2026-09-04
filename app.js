@@ -4,9 +4,9 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'gantt-config-v6';
-  var BASELINE_KEY = 'gantt-baseline-v6';
-  var VERSIONS_KEY = 'gantt-versions-v6';
+  var STORAGE_KEY = 'gantt-config-v7';
+  var BASELINE_KEY = 'gantt-baseline-v7';
+  var VERSIONS_KEY = 'gantt-versions-v7';
   var MAX_VERSIONS = 20;
 
   var chartEl = document.getElementById('chart');
@@ -286,6 +286,7 @@
     beforeCfg.layout = JSON.parse(JSON.stringify(current.layout || {}));
     if (current.colors) beforeCfg.colors = JSON.parse(JSON.stringify(current.colors));
     if (current.palette) beforeCfg.palette = JSON.parse(JSON.stringify(current.palette));
+    if (current.compress) beforeCfg.compress = JSON.parse(JSON.stringify(current.compress));
 
     var cur = {};
     indexById(current.milestones, 'ms:', cur);
@@ -361,6 +362,7 @@
         var beforeCfg = JSON.parse(JSON.stringify(baseline));
         beforeCfg.range = JSON.parse(JSON.stringify(config.range));
         beforeCfg.periodLabels = (config.periodLabels || []).slice();
+        beforeCfg.compress = JSON.parse(JSON.stringify(config.compress || {}));
         applyCurrentPresentation(beforeCfg, config);
 
         var afterCfg = Gantt.normalize(config);
@@ -397,6 +399,7 @@
     document.body.classList.toggle('compare-on', compareOn());
     updateCompareSummary(svg && svg.__gantt ? svg.__gantt.compareSummary : null);
     syncRangeControls();
+    syncCompressControls();
     if (!jsonPanel.hidden && !opts.keepJson) configText.value = JSON.stringify(config, null, 2);
   }
 
@@ -467,6 +470,69 @@
   rangeIds.forEach(function (id) {
     document.getElementById(id).addEventListener('change', applyRange);
   });
+
+  function defaultCompressYears() {
+    var scale = svg && svg.__gantt && svg.__gantt.scale;
+    var last = scale ? scale.lastYear : 2029;
+    var first = scale ? scale.firstYear : 2026;
+    var end = last;
+    var start = Math.max(first, last - 1);
+    return { start: start, end: end };
+  }
+
+  function ensureCompress() {
+    if (!config.compress) config.compress = { enabled: false, startYear: null, endYear: null };
+    return config.compress;
+  }
+
+  function syncCompressControls() {
+    var box = document.getElementById('compressOn');
+    var startSel = document.getElementById('compressStartYear');
+    var endSel = document.getElementById('compressEndYear');
+    var wrap = document.getElementById('compressYears');
+    if (!box || !startSel || !endSel) return;
+    var c = ensureCompress();
+    var def = defaultCompressYears();
+    var scale = svg && svg.__gantt && svg.__gantt.scale;
+    var y0 = scale ? scale.firstYear : def.start;
+    var y1 = scale ? scale.lastYear : def.end;
+    var sy = c.startYear !== null && c.startYear !== undefined && c.startYear !== '' && isFinite(+c.startYear)
+      ? +c.startYear
+      : def.start;
+    var ey = c.endYear !== null && c.endYear !== undefined && c.endYear !== '' && isFinite(+c.endYear)
+      ? +c.endYear
+      : def.end;
+    if (sy < y0) sy = y0;
+    if (ey > y1) ey = y1;
+    if (ey < sy) ey = sy;
+    fillYears('compressStartYear', y0, y1, sy);
+    fillYears('compressEndYear', y0, y1, ey);
+    box.checked = !!c.enabled;
+    startSel.disabled = !c.enabled;
+    endSel.disabled = !c.enabled;
+    if (wrap) wrap.classList.toggle('is-off', !c.enabled);
+  }
+
+  function applyCompress() {
+    pushHistory();
+    var c = ensureCompress();
+    c.enabled = document.getElementById('compressOn').checked;
+    var sy = +document.getElementById('compressStartYear').value;
+    var ey = +document.getElementById('compressEndYear').value;
+    if (isFinite(sy) && isFinite(ey) && ey < sy) {
+      var tmp = sy;
+      sy = ey;
+      ey = tmp;
+    }
+    c.startYear = isFinite(sy) ? sy : null;
+    c.endYear = isFinite(ey) ? ey : null;
+    draw();
+    autoSave();
+  }
+
+  document.getElementById('compressOn').addEventListener('change', applyCompress);
+  document.getElementById('compressStartYear').addEventListener('change', applyCompress);
+  document.getElementById('compressEndYear').addEventListener('change', applyCompress);
 
   /* --------------------------------------------------------------- 편집기 연결 */
 

@@ -40,6 +40,11 @@ window.GANTT_CONFIG = {
     "start": "2026-Q2",
     "end": "2029-Q1"
   },
+  "compress": {
+    "enabled": true,
+    "startYear": 2028,
+    "endYear": 2029
+  },
   "periodLabels": [
     "1Q",
     "2Q",

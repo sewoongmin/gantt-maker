@@ -260,6 +260,12 @@
     return -12; /* bar */
   }
 
+  function clientToSvgX(clientX) {
+    var rect = svg.getBoundingClientRect();
+    if (!rect.width) return 0;
+    return (clientX - rect.left) * (api.totalWidth / rect.width);
+  }
+
   function startDrag(meta, event) {
     var obj = targetOf(meta);
     if (!obj) return;
@@ -274,6 +280,7 @@
       clientX: event.clientX,
       clientY: event.clientY,
       part: meta.part,
+      origT: api.timeAtX(clientToSvgX(event.clientX)),
       origStart: obj.start !== undefined ? api.scale.parse(obj.start) : null,
       origEnd: obj.end !== undefined ? api.scale.parse(obj.end) : null,
       origAt: obj.at !== undefined ? api.scale.parse(obj.at) : null,
@@ -316,7 +323,7 @@
       return;
     }
 
-    var deltaPeriods = (event.clientX - drag.clientX) / drag.unit / api.layout.periodWidth;
+    var deltaPeriods = api.timeAtX(clientToSvgX(event.clientX)) - drag.origT;
     if (Math.abs(deltaPeriods) < 0.001 && !drag.moved) return;
     if (!drag.moved) {
       ctx.pushHistory();
