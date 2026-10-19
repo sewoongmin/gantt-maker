@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>연구개발 추진일정 (간트차트)</title>
-  <link rel="stylesheet" href="style.css?v=20260904-2" />
+  <link rel="stylesheet" href="style.css?v=20261019-1" />
 </head>
 <body>
   <header class="toolbar no-print">
@@ -37,6 +37,8 @@
           <option value="0.5">½분기</option>
           <option value="0.25" selected>¼분기</option>
           <option value="0.1">0.1분기</option>
+          <option value="0.3333333333">1개월</option>
+          <option value="0.1666666667">½개월</option>
           <option value="0">자유</option>
         </select>
       </label>
@@ -82,6 +84,36 @@
       <button id="btnDeleteVersion" title="선택한 버전을 목록에서 지웁니다">버전 삭제</button>
       <span id="saveState" class="save-state"></span>
     </div>
+
+    <div class="tb-row">
+      <label class="field" title="자동: 보이는 기간이 18개월 이하이면 1월~12월, 길면 1Q~4Q">
+        표시 단위
+        <select id="timeUnit">
+          <option value="auto">자동</option>
+          <option value="quarter">분기 (1Q~4Q)</option>
+          <option value="month">월 (1월~12월)</option>
+        </select>
+      </label>
+      <span class="sep"></span>
+      <label class="field" title="자동: 기간이 길든 짧든 그림 폭을 약 1000px 근처로 맞춥니다">
+        그림 가로 폭
+        <select id="widthMode">
+          <option value="auto">자동</option>
+          <option value="manual">직접</option>
+        </select>
+      </label>
+      <input type="range" id="chartWidth" class="size-range" min="400" max="2400" step="20" />
+      <input type="number" id="chartWidthNum" class="size-num" min="400" max="4000" step="10" />
+      <span class="unit-label">px</span>
+      <span class="sep"></span>
+      <label class="field" title="글자·행 높이를 키웁니다. 기간 축 폭은 그대로라 문서에 넣었을 때 글자가 커 보입니다">
+        글자 크기
+        <input type="range" id="fontScale" class="size-range" min="60" max="200" step="5" />
+        <span id="fontScaleVal" class="size-val">100%</span>
+      </label>
+      <button id="btnSizeReset" title="표시 단위·가로 폭·글자 크기를 기본값으로">크기 초기화</button>
+      <span id="sizeInfo" class="size-info"></span>
+    </div>
   </header>
 
   <section id="jsonPanel" class="json-panel no-print" hidden>
@@ -107,13 +139,14 @@
     <b>버전 저장</b>으로 원하는 시점(초안·최종안 등)을 남겨 두고, <b>이 버전으로</b> / <b>변경 전으로</b> 돌아갈 수 있습니다.
     <b>간트 내보내기 / 불러오기</b>로 일정을 파일로 보관·이어서 수정하세요.
     <b>기간 축약</b>으로 2028~2029처럼 비슷한 연도를 물결로 접으면 그림이 짧아지고 글자가 커집니다.
+    기간이 짧으면 <b>표시 단위</b>가 자동으로 1월~12월이 되고, <b>그림 가로 폭</b>·<b>글자 크기</b>로 문서에 넣을 크기를 맞출 수 있습니다.
     <b>Delete</b> 삭제 · <b>Shift+↑↓</b> 큰 이동 · <b>Ctrl+Z</b> 되돌리기.
   </p>
 
-  <script src="chart-config.js?v=20260904-2"></script>
-  <script src="compare.js?v=20260904-2"></script>
-  <script src="gantt.js?v=20260904-2"></script>
-  <script src="editor.js?v=20260904-2"></script>
-  <script src="app.js?v=20260904-2"></script>
+  <script src="chart-config.js?v=20261019-1"></script>
+  <script src="compare.js?v=20261019-1"></script>
+  <script src="gantt.js?v=20261019-1"></script>
+  <script src="editor.js?v=20261019-1"></script>
+  <script src="app.js?v=20261019-1"></script>
 </body>
 </html>

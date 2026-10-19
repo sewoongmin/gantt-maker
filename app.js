@@ -363,6 +363,7 @@
         beforeCfg.range = JSON.parse(JSON.stringify(config.range));
         beforeCfg.periodLabels = (config.periodLabels || []).slice();
         beforeCfg.compress = JSON.parse(JSON.stringify(config.compress || {}));
+        beforeCfg.timeUnit = config.timeUnit;
         applyCurrentPresentation(beforeCfg, config);
 
         var afterCfg = Gantt.normalize(config);
@@ -400,6 +401,7 @@
     updateCompareSummary(svg && svg.__gantt ? svg.__gantt.compareSummary : null);
     syncRangeControls();
     syncCompressControls();
+    syncSizeControls();
     if (!jsonPanel.hidden && !opts.keepJson) configText.value = JSON.stringify(config, null, 2);
   }
 
@@ -533,6 +535,129 @@
   document.getElementById('compressOn').addEventListener('change', applyCompress);
   document.getElementById('compressStartYear').addEventListener('change', applyCompress);
   document.getElementById('compressEndYear').addEventListener('change', applyCompress);
+
+  /* ------------------------------------------------------ 표시 단위 · 그림 크기 */
+
+  var lastUnit = null;
+  var sizeEditing = false;
+
+  function ensureLayout() {
+    if (!config.layout) config.layout = {};
+    return config.layout;
+  }
+
+  function syncSizeControls() {
+    var g = svg && svg.__gantt;
+    if (!g) return;
+    var lay = config.layout || {};
+    var manual = lay.widthMode === 'manual';
+    var outW = Math.round(g.outputWidth);
+    var outH = Math.round(g.outputHeight);
+
+    document.getElementById('timeUnit').value = config.timeUnit || 'auto';
+    document.getElementById('widthMode').value = manual ? 'manual' : 'auto';
+
+    var range = document.getElementById('chartWidth');
+    var num = document.getElementById('chartWidthNum');
+    var shownW = manual && isFinite(+lay.chartWidth) ? Math.round(+lay.chartWidth) : outW;
+    if (document.activeElement !== num) num.value = shownW;
+    if (!sizeEditing) range.value = Math.max(+range.min, Math.min(+range.max, shownW));
+    range.disabled = !manual;
+    num.disabled = !manual;
+
+    var fs = Math.round((g.fontScale || 1) * 100);
+    if (!sizeEditing) document.getElementById('fontScale').value = fs;
+    document.getElementById('fontScaleVal').textContent = fs + '%';
+
+    document.getElementById('sizeInfo').textContent =
+      '그림 ' + outW + ' × ' + outH + ' px' + (g.unit === 'month' ? ' · 월 단위' : ' · 분기 단위');
+
+    /* 표시 단위가 바뀌면 이동 단위도 맞춰 줍니다 (월 → 1개월, 분기 → ¼분기) */
+    if (g.unit !== lastUnit) {
+      var snapSel = document.getElementById('snap');
+      if (g.unit === 'month') snapSel.value = '0.3333333333';
+      else if (lastUnit === 'month') snapSel.value = '0.25';
+      lastUnit = g.unit;
+    }
+  }
+
+  function beginSizeEdit() {
+    if (sizeEditing) return;
+    pushHistory();
+    sizeEditing = true;
+  }
+
+  function endSizeEdit() {
+    sizeEditing = false;
+    draw();
+    autoSave();
+  }
+
+  document.getElementById('timeUnit').addEventListener('change', function (ev) {
+    pushHistory();
+    if (ev.target.value === 'auto') delete config.timeUnit;
+    else config.timeUnit = ev.target.value;
+    draw();
+    autoSave();
+  });
+
+  document.getElementById('widthMode').addEventListener('change', function (ev) {
+    pushHistory();
+    var lay = ensureLayout();
+    if (ev.target.value === 'manual') {
+      lay.widthMode = 'manual';
+      /* 지금 보이는 폭에서 시작해 그림이 튀지 않게 */
+      lay.chartWidth = Math.round(svg.__gantt.outputWidth);
+    } else {
+      lay.widthMode = 'auto';
+    }
+    draw();
+    autoSave();
+  });
+
+  document.getElementById('chartWidth').addEventListener('input', function (ev) {
+    beginSizeEdit();
+    var lay = ensureLayout();
+    lay.widthMode = 'manual';
+    lay.chartWidth = +ev.target.value;
+    draw();
+  });
+  document.getElementById('chartWidth').addEventListener('change', endSizeEdit);
+
+  document.getElementById('chartWidthNum').addEventListener('change', function (ev) {
+    var v = Math.round(+ev.target.value);
+    if (!isFinite(v) || v < 200) return;
+    pushHistory();
+    var lay = ensureLayout();
+    lay.widthMode = 'manual';
+    lay.chartWidth = v;
+    draw();
+    autoSave();
+  });
+
+  document.getElementById('fontScale').addEventListener('input', function (ev) {
+    beginSizeEdit();
+    var v = +ev.target.value / 100;
+    var lay = ensureLayout();
+    if (Math.abs(v - 1) < 0.001) delete lay.fontScale;
+    else lay.fontScale = v;
+    document.getElementById('fontScaleVal').textContent = Math.round(v * 100) + '%';
+    draw();
+  });
+  document.getElementById('fontScale').addEventListener('change', endSizeEdit);
+
+  document.getElementById('btnSizeReset').addEventListener('click', function () {
+    pushHistory();
+    var lay = ensureLayout();
+    delete lay.widthMode;
+    delete lay.chartWidth;
+    delete lay.autoWidth;
+    delete lay.fontScale;
+    delete config.timeUnit;
+    draw();
+    autoSave();
+    message('표시 단위·그림 폭·글자 크기를 기본값으로 되돌렸습니다.', 'ok');
+  });
 
   /* --------------------------------------------------------------- 편집기 연결 */
 

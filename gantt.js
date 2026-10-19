@@ -31,7 +31,17 @@
     showYearGrid: true,        // 연도 경계 세로선
     zebra: true,               // 한 행씩 건너뛰며 배경색
     zebraStart: 1,             // 0 = 첫 행부터, 1 = 두 번째 행부터
-    rowComparePad: 34          // 변경 비교 표시 — 일정 라인 바로 아래 짧은 여유
+    rowComparePad: 34,         // 변경 비교 표시 — 일정 라인 바로 아래 짧은 여유
+    widthMode: 'auto',         // 'auto' = 그림 폭을 autoWidth 근처로 맞춤, 'manual' = chartWidth 고정
+    autoWidth: 1000,           // 자동일 때 목표 그림 폭(px)
+    chartWidth: 1000,          // 직접 지정일 때 그림 폭(px)
+    fontScale: 1               // 글자·행 높이 배율. 기간 축 폭은 그대로라 글자만 커집니다
+  };
+
+  /* 표시 칸 하나의 최소/최대 폭(글자 배율 1 기준). 자동 폭에서 칸이 너무 좁거나 넓어지지 않게 */
+  var CELL_LIMITS = {
+    quarter: { min: 38, max: 180 },
+    month: { min: 30, max: 90 }
   };
 
   /* 색 후보군 — 편집 화면의 색상 드롭다운에 그대로 나옵니다 */
@@ -174,8 +184,54 @@
       return compose(s.year, s.period, s.frac);
     }
 
+    /* 월 단위 표시용: 내부는 분기 축 그대로, 문자열만 "2027-03" / "2027-03-15" */
+    var monthsPerPeriod = 12 % P === 0 ? 12 / P : 0;
+
+    function splitMonth(value) {
+      var abs = typeof value === 'number' ? value + startAbs : parseAbs(value);
+      var year = Math.floor(abs / P + 1e-9);
+      var mf = (abs - year * P) * (12 / P);
+      var m = Math.floor(mf + 1e-6);
+      var frac = Math.max(0, mf - m);
+      if (m >= 12) {
+        m -= 12;
+        year += 1;
+      }
+      return { year: year, month: m + 1, frac: frac };
+    }
+
+    function composeMonth(year, month, frac) {
+      var day = Math.round((frac || 0) * 30.4);
+      var mm = month;
+      var yy = year;
+      if (day >= 30) {
+        day = 0;
+        mm += 1;
+      }
+      while (mm > 12) {
+        mm -= 12;
+        yy += 1;
+      }
+      while (mm < 1) {
+        mm += 12;
+        yy -= 1;
+      }
+      var s = yy + '-' + (mm < 10 ? '0' : '') + mm;
+      if (day > 0) s += '-' + (day + 1 < 10 ? '0' : '') + (day + 1);
+      return s;
+    }
+
+    function formatMonth(t) {
+      var s = splitMonth(t);
+      return composeMonth(s.year, s.month, s.frac);
+    }
+
     return {
       periods: P,
+      monthsPerPeriod: monthsPerPeriod,
+      splitMonth: splitMonth,
+      composeMonth: composeMonth,
+      formatMonth: formatMonth,
       total: total,
       startAbs: startAbs,
       endAbs: endAbs,
@@ -307,6 +363,20 @@
       });
     }
     return bands;
+  }
+
+  /* 'auto' 는 보이는 기간이 18개월 이하일 때 월 단위로 표시 */
+  function resolveUnit(cfg, scale) {
+    if (!scale.monthsPerPeriod) return 'quarter';
+    var u = cfg.timeUnit || 'auto';
+    if (u === 'month' || u === 'quarter') return u;
+    return scale.total * scale.monthsPerPeriod <= 18 ? 'month' : 'quarter';
+  }
+
+  function numIn(v, lo, hi, fallback) {
+    var n = +v;
+    if (v === null || v === undefined || v === '' || !isFinite(n)) return fallback;
+    return Math.max(lo, Math.min(hi, n));
   }
 
   function wavePath(points) {
@@ -540,6 +610,29 @@
     var P = scale.periods;
 
     var visual = makeVisualMap(scale, cfg);
+    var unit = resolveUnit(cfg, scale);
+    var cellsPerPeriod = unit === 'month' ? scale.monthsPerPeriod : 1;
+
+    /*
+     * 크기 계산 — 그림은 내부 좌표로 그린 뒤 fontScale 배로 키워 내보냅니다.
+     * 기간 축의 내부 폭을 fontScale 로 나눠 두면, 최종 그림에서 축 폭은 그대로이고
+     * 글자·행 높이·행 이름 칸만 커집니다.
+     */
+    var fontScale = numIn(L.fontScale, 0.5, 3, 1);
+    var fixedOut = (L.padding * 2 + L.labelColWidth) * fontScale;
+    var cols = Math.max(1, visual.visualTotal * cellsPerPeriod);
+    var limits = CELL_LIMITS[unit];
+    var plotOut;
+    if (L.widthMode === 'manual') {
+      plotOut = Math.max(cols * 8 * fontScale, numIn(L.chartWidth, 200, 20000, 1000) - fixedOut);
+    } else {
+      var cellOut = (numIn(L.autoWidth, 200, 20000, 1000) - fixedOut) / cols;
+      cellOut = Math.max(limits.min * fontScale, Math.min(limits.max * fontScale, cellOut));
+      plotOut = cellOut * cols;
+    }
+    L.periodWidth = plotOut / fontScale / visual.visualTotal;
+    var cellW = L.periodWidth / cellsPerPeriod;
+
     var plotX = L.padding + L.labelColWidth;
     var plotW = visual.visualTotal * L.periodWidth;
     var totalWidth = plotX + plotW + L.padding;
@@ -746,13 +839,16 @@
     var totalHeight = (legendHeight ? legendTop + legendHeight : calloutBottom) + L.padding;
 
     /* ---- SVG 루트 ---- */
+    var outW = Math.round(totalWidth * fontScale * 100) / 100;
+    var outH = Math.round(totalHeight * fontScale * 100) / 100;
     var svg = el('svg', {
       xmlns: NS,
       viewBox: '0 0 ' + totalWidth + ' ' + totalHeight,
-      width: totalWidth,
-      height: totalHeight,
-      'data-width': totalWidth,
-      'data-height': totalHeight,
+      width: outW,
+      height: outH,
+      'data-width': outW,
+      'data-height': outH,
+      'data-scale': fontScale,
       preserveAspectRatio: 'xMidYMid meet'
     });
     var style = el('style', null, svg);
@@ -832,29 +928,41 @@
         });
       } else {
         var abs;
+        var k;
         for (abs = band.fromAbs; abs < band.toAbs; abs++) {
-          var px = xAtT(abs - scale.startAbs);
-          var pw = xAtT(abs + 1 - scale.startAbs) - px;
-          el(
-            'rect',
-            {
-              x: px,
-              y: periodTop,
-              width: pw,
-              height: L.periodHeaderHeight,
-              fill: cfg.colors.subHeader,
-              stroke: gridColor,
-              'stroke-width': 1
-            },
-            gHeader
-          );
-          text(
-            gHeader,
-            px + pw / 2,
-            periodTop + L.periodHeaderHeight / 2 + 4.5,
-            cfg.periodLabels[abs - Math.floor(abs / P) * P],
-            { size: 12.5, fill: '#3F3F3F' }
-          );
+          var periodIdx = abs - Math.floor(abs / P) * P;
+          for (k = 0; k < cellsPerPeriod; k++) {
+            var t0 = abs - scale.startAbs + k / cellsPerPeriod;
+            var px = xAtT(t0);
+            var pw = xAtT(t0 + 1 / cellsPerPeriod) - px;
+            el(
+              'rect',
+              {
+                x: px,
+                y: periodTop,
+                width: pw,
+                height: L.periodHeaderHeight,
+                fill: cfg.colors.subHeader,
+                stroke: gridColor,
+                'stroke-width': 1
+              },
+              gHeader
+            );
+            var cellLabel;
+            if (unit === 'month') {
+              var mon = periodIdx * cellsPerPeriod + k + 1;
+              if (cellW < 16 && (mon - 1) % 3 !== 0) cellLabel = '';
+              else cellLabel = cellW >= 30 ? mon + '월' : String(mon);
+            } else {
+              cellLabel = cfg.periodLabels[periodIdx];
+            }
+            if (cellLabel) {
+              text(gHeader, px + pw / 2, periodTop + L.periodHeaderHeight / 2 + 4.5, cellLabel, {
+                size: 12.5,
+                fill: '#3F3F3F'
+              });
+            }
+          }
         }
       }
     });
@@ -930,11 +1038,14 @@
 
     /* ---- 세로 격자 ---- */
     var gGrid = el('g', null, svg);
-    for (var p = 1; p < scale.total; p++) {
+    var gridSteps = scale.total * cellsPerPeriod;
+    for (var gi = 1; gi < gridSteps; gi++) {
+      var p = gi / cellsPerPeriod;
       if (visual.enabled && p > visual.c0 + 0.001 && p < visual.c1 - 0.001) continue;
-      var absIdx = scale.startAbs + p;
-      var isYearBoundary = absIdx % P === 0;
+      var isPeriodBoundary = gi % cellsPerPeriod === 0;
+      var isYearBoundary = isPeriodBoundary && (scale.startAbs + p) % P === 0;
       if (isYearBoundary ? !L.showYearGrid : !L.showPeriodGrid) continue;
+      var isMonthOnly = !isPeriodBoundary;
       el(
         'line',
         {
@@ -943,7 +1054,8 @@
           x2: xAtT(p),
           y2: plotBottom,
           stroke: isYearBoundary ? cfg.colors.gridYear : cfg.colors.gridPeriod,
-          'stroke-width': isYearBoundary ? 1.25 : 1,
+          'stroke-width': isYearBoundary ? 1.25 : isMonthOnly ? 0.7 : unit === 'month' ? 1.15 : 1,
+          'stroke-opacity': isMonthOnly ? 0.75 : null,
           'stroke-dasharray': !isYearBoundary && L.periodGridStyle === 'dashed' ? '3.5 3' : null
         },
         gGrid
@@ -1515,9 +1627,13 @@
       timeAtX: function (px) {
         return visual.vToT((px - plotX) / L.periodWidth);
       },
-      format: scale.format,
+      unit: unit,
+      format: unit === 'month' ? scale.formatMonth : scale.format,
       totalWidth: totalWidth,
       totalHeight: totalHeight,
+      outputWidth: outW,
+      outputHeight: outH,
+      fontScale: fontScale,
       compareSummary: compareSummary
     };
 

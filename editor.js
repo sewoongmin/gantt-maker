@@ -157,8 +157,64 @@
     return wrap;
   }
 
+  function nudgeButtons(value, onchange) {
+    var scale = api.scale;
+    var nudge = function (dir) {
+      return function () {
+        ctx.pushHistory();
+        var step = ctx.getSnap() || 0.05;
+        var t = scale.parseAbs(value) - scale.startAbs + dir * step;
+        onchange(api.format(Math.max(0, Math.min(scale.total, t))));
+      };
+    };
+    return h('div', { class: 'nudge' }, [button('◀', nudge(-1), 'tiny'), button('▶', nudge(1), 'tiny')]);
+  }
+
+  /* 연도 / 월 / 일 드롭다운 + 미세 이동 (월 단위 표시일 때) */
+  function monthTimeControl(value, onchange) {
+    var scale = api.scale;
+    var parts = scale.splitMonth(value);
+    var years = [];
+    var y0 = Math.min(scale.firstYear, parts.year) - 1;
+    var y1 = Math.max(scale.lastYear, parts.year) + 1;
+    for (var y = y0; y <= y1; y++) years.push([y, y + '년']);
+
+    var months = [];
+    for (var m = 1; m <= 12; m++) months.push([m, m + '월']);
+
+    var dayOptions = [[0, '1일'], [Math.round((14 / 30.4) * 1000) / 1000, '15일']];
+    var fr = Math.round(parts.frac * 1000) / 1000;
+    if (!dayOptions.some(function (o) { return Math.abs(o[0] - fr) < 0.002; })) {
+      dayOptions.push([fr, Math.round(fr * 30.4) + 1 + '일']);
+    }
+
+    function emit() {
+      onchange(scale.composeMonth(parts.year, parts.month, parts.frac));
+    }
+
+    return h('div', { class: 'time-ctrl' }, [
+      select(years, parts.year, function (v) {
+        ctx.pushHistory();
+        parts.year = +v;
+        emit();
+      }),
+      select(months, parts.month, function (v) {
+        ctx.pushHistory();
+        parts.month = +v;
+        emit();
+      }),
+      select(dayOptions, fr, function (v) {
+        ctx.pushHistory();
+        parts.frac = +v;
+        emit();
+      }),
+      nudgeButtons(value, onchange)
+    ]);
+  }
+
   /* 연도 / 분기 / 분기내 위치 드롭다운 + 미세 이동 */
   function timeControl(value, onchange) {
+    if (api.unit === 'month') return monthTimeControl(value, onchange);
     var scale = api.scale;
     var parts = scale.split(value);
     var years = [];
@@ -196,21 +252,7 @@
       emit(parts);
     });
 
-    var nudge = function (dir) {
-      return function () {
-        ctx.pushHistory();
-        var step = ctx.getSnap() || 0.05;
-        var t = scale.parseAbs(value) - scale.startAbs + dir * step;
-        onchange(scale.format(Math.max(0, Math.min(scale.total, t))));
-      };
-    };
-
-    return h('div', { class: 'time-ctrl' }, [
-      ySel,
-      pSel,
-      fSel,
-      h('div', { class: 'nudge' }, [button('◀', nudge(-1), 'tiny'), button('▶', nudge(1), 'tiny')])
-    ]);
+    return h('div', { class: 'time-ctrl' }, [ySel, pSel, fSel, nudgeButtons(value, onchange)]);
   }
 
   /* --------------------------------------------------------------- 편집 동작 */

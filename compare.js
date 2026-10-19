@@ -585,10 +585,12 @@
     Array.prototype.forEach.call(clone.childNodes, function (node) {
       if (node.nodeType === 1) parts.push(new XMLSerializer().serializeToString(node));
     });
+    var s = +svg.getAttribute('data-scale') || 1;
+    var body = parts.join('');
     return {
       width: +svg.getAttribute('data-width'),
       height: +svg.getAttribute('data-height'),
-      body: parts.join('')
+      body: s === 1 ? body : '<g transform="scale(' + s + ')">' + body + '</g>'
     };
   }
 
