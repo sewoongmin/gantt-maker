@@ -1009,6 +1009,13 @@
           { x: L.padding, y: top, width: L.labelColWidth, height: h, fill: 'transparent' },
           { kind: 'row', row: i, cursor: 'pointer' }
         );
+        /* 기간 영역의 빈 곳 — 막대·표식 히트(gHit)보다 아래라 빈 곳만 잡힘 */
+        hit(
+          gRows,
+          'rect',
+          { x: plotX, y: top, width: plotW, height: h, fill: 'transparent' },
+          { kind: 'row', row: i }
+        );
       }
     });
 
@@ -1122,6 +1129,25 @@
     /* ---- 막대 / 표식 ---- */
     var gBars = el('g', null, svg);
     var gHit = el('g', null, svg);
+
+    if (sel && sel.kind === 'row' && rowTops[sel.row] !== undefined) {
+      el(
+        'rect',
+        {
+          x: L.padding + 1.5,
+          y: rowTops[sel.row] + 1.5,
+          width: plotX + plotW - L.padding - 3,
+          height: rowHeights[sel.row] - 3,
+          fill: 'none',
+          stroke: SELECT_COLOR,
+          'stroke-width': 1.6,
+          'stroke-dasharray': '4 3',
+          'pointer-events': 'none',
+          'data-editor': 'select'
+        },
+        gHit
+      );
+    }
 
     cfg.rows.forEach(function (row, i) {
       var base = rowBaselines[i];
