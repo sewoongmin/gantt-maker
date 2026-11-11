@@ -375,6 +375,24 @@ body.edit-on .chart svg { user-select: none; }
   .inspector { flex: 1 1 100%; position: static; max-height: none; }
 }
 
+/* 복사·붙여넣기 알림 */
+.editor-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 1100;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.9);
+  color: #fff;
+  font-size: 13px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.editor-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
 /* Ctrl 드래그 복사 중 */
 body.drag-copy,
 body.drag-copy * { cursor: copy !important; }

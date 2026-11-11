@@ -1694,6 +1694,174 @@
     );
   }
 
+  /* ------------------------------------------------------ 복사 / 붙여넣기 */
+
+  var CLIP_KEY = 'gantt-clipboard-v1';
+  var CLIP_NAME = { bar: '구간', marker: '이벤트 점', deliverable: '산출물', milestone: '마일스톤', legendItem: '범례 항목', row: '행' };
+  var toastEl = null;
+  var toastTimer = null;
+
+  function toast(text) {
+    if (!toastEl) {
+      toastEl = h('div', { class: 'editor-toast' });
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = text;
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('on'); }, 1600);
+  }
+
+  /* 다른 탭에서도 붙여넣을 수 있게 localStorage 에 둡니다 */
+  function readClip() {
+    try {
+      return JSON.parse(localStorage.getItem(CLIP_KEY) || 'null');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeClip(clip) {
+    try {
+      localStorage.setItem(CLIP_KEY, JSON.stringify(clip));
+    } catch (e) { /* 저장 공간이 없으면 붙여넣기만 못 함 */ }
+  }
+
+  function clone(o) {
+    return JSON.parse(JSON.stringify(o));
+  }
+
+  function stripIds(row) {
+    delete row.id;
+    ['bars', 'markers', 'deliverables'].forEach(function (key) {
+      (row[key] || []).forEach(function (item) { delete item.id; });
+    });
+  }
+
+  function copySelection(cut) {
+    if (!selection) return false;
+    var kind = selection.kind;
+    if (!CLIP_NAME[kind]) return false;
+    var obj = targetOf(selection);
+    if (!obj) return false;
+    var item = clone(obj);
+    var cfg = ctx.getConfig();
+    if (kind === 'bar' && !item.color) item.color = autoColorOf(cfg.rows[selection.row], selection.index);
+    writeClip({ kind: kind, item: item, row: selection.row, lane: kind === 'row' ? 0 : laneOf(obj) });
+    if (cut) {
+      if (kind === 'row' && cfg.rows.length <= 1) {
+        toast('마지막 행은 잘라낼 수 없습니다');
+        return true;
+      }
+      removeSelection();
+      toast(CLIP_NAME[kind] + '을(를) 잘라냈습니다 · Ctrl+V 로 붙여넣기');
+    } else {
+      toast(CLIP_NAME[kind] + '을(를) 복사했습니다 · Ctrl+V 로 붙여넣기');
+    }
+    return true;
+  }
+
+  /*
+   * 키보드 붙여넣기 위치: 다른 행·줄이면 원본과 같은 시점, 같은 행·줄이면 원본 바로 뒤.
+   * 같은 곳에 또 붙이면 직전 붙여넣기 바로 뒤로 이어집니다.
+   */
+  function nextPasteStart(clip, target, orig, len) {
+    var step = len || ctx.getSnap() || 0.25;
+    var last = clip.last;
+    var s;
+    if (last && last.row === target.row && last.lane === target.lane) s = last.s + step;
+    else if (target.row === clip.row && target.lane === (clip.lane || 0)) s = orig + step;
+    else s = orig;
+    s = Math.max(0, Math.min(s, api.scale.total - len));
+    clip.last = { row: target.row, lane: target.lane, s: s };
+    writeClip(clip);
+    return s;
+  }
+
+  /* where: { row, lane, t } — 우클릭 「여기에 붙여넣기」는 그 자리, 키보드는 선택한 행/줄 */
+  function pasteClipboard(where) {
+    var clip = readClip();
+    if (!clip || !clip.item || !api) return false;
+    var cfg = ctx.getConfig();
+    var kind = clip.kind;
+    var item = clone(clip.item);
+    var hasT = where && typeof where.t === 'number';
+
+    if (kind === 'row') {
+      var at = selection && typeof selection.row === 'number' ? selection.row + 1 : cfg.rows.length;
+      if (where && typeof where.row === 'number') at = where.row + 1;
+      ctx.pushHistory();
+      stripIds(item);
+      cfg.rows.splice(at, 0, item);
+      shiftMilestoneRows(at, 1);
+      selection = { kind: 'row', row: at, index: null, lane: 0 };
+      apply(false);
+      toast('행을 붙여넣었습니다');
+      return true;
+    }
+
+    if (kind === 'milestone') {
+      ctx.pushHistory();
+      item.id = newId('ms-');
+      var a = hasT ? where.t : nextPasteStart(clip, { row: clip.row, lane: clip.lane || 0 }, api.scale.parse(item.at), 0);
+      item.at = fmt(a);
+      cfg.milestones.push(item);
+      selection = { kind: 'milestone', row: null, index: cfg.milestones.length - 1 };
+      apply(false);
+      toast('마일스톤을 붙여넣었습니다');
+      return true;
+    }
+
+    if (kind === 'legendItem') {
+      ctx.pushHistory();
+      cfg.legend = cfg.legend || { show: true, title: '범례', items: [] };
+      cfg.legend.show = true;
+      cfg.legend.items = cfg.legend.items || [];
+      var li = selection && selection.kind === 'legendItem' ? selection.index + 1 : cfg.legend.items.length;
+      cfg.legend.items.splice(li, 0, item);
+      selection = { kind: 'legendItem', row: null, index: li };
+      apply(false);
+      toast('범례 항목을 붙여넣었습니다');
+      return true;
+    }
+
+    var key = ROW_ITEM_KEY[kind];
+    if (!key) return false;
+    var target;
+    if (where && typeof where.row === 'number') target = { row: where.row, lane: where.lane || 0 };
+    else if (selection && typeof selection.row === 'number' && cfg.rows[selection.row]) target = selectedRowLane();
+    else target = { row: cfg.rows[clip.row] ? clip.row : 0, lane: clip.lane || 0 };
+    var row = cfg.rows[target.row];
+    if (!row) return false;
+
+    ctx.pushHistory();
+    row[key] = row[key] || [];
+    item.id = newId(kind === 'bar' ? 'bar-' : kind === 'marker' ? 'mk-' : 'dv-');
+    delete item.compareHidden;
+    if (target.row !== clip.row || target.lane !== (clip.lane || 0)) delete item.dy;
+    setLane(item, target.lane);
+    if (kind === 'bar') {
+      var len = api.scale.parse(item.end) - api.scale.parse(item.start);
+      var s = hasT ? where.t : nextPasteStart(clip, target, api.scale.parse(item.start), len);
+      s = Math.max(0, Math.min(s, api.scale.total - len));
+      item.start = fmt(s);
+      item.end = fmt(s + len);
+    } else {
+      var t0 = hasT ? where.t : nextPasteStart(clip, target, api.scale.parse(item.at), 0);
+      item.at = fmt(t0);
+    }
+    row[key].push(item);
+    selection = { kind: kind, row: target.row, index: row[key].length - 1 };
+    apply(false);
+    toast(CLIP_NAME[kind] + '을(를) 붙여넣었습니다');
+    return true;
+  }
+
+  function clipLabel() {
+    var clip = readClip();
+    return clip && CLIP_NAME[clip.kind] ? CLIP_NAME[clip.kind] : null;
+  }
+
   /* -------------------------------------------------------------- 우클릭 메뉴 */
 
   var menuEl = null;
@@ -1871,6 +2039,21 @@
     });
   }
 
+  function clipMenu(sel, obj, t) {
+    var out = [
+      menuItem('복사', function () { copySelection(false); }, { key: 'Ctrl+C' }),
+      menuItem('잘라내기', function () { copySelection(true); }, { key: 'Ctrl+X' })
+    ];
+    var name = clipLabel();
+    if (name && name !== '행') {
+      var where;
+      if (ROW_ITEM_KEY[sel.kind]) where = { row: sel.row, lane: laneOf(obj), t: typeof t === 'number' ? t : undefined };
+      else if (sel.kind === 'milestone' && typeof t === 'number') where = { t: t };
+      out.push(menuItem(name + ' 붙여넣기', function () { pasteClipboard(where); }, { key: 'Ctrl+V' }));
+    }
+    return out;
+  }
+
   function itemName(text, fallback) {
     var s = String(text || fallback).replace(/\n/g, ' ');
     return s.length > 18 ? s.slice(0, 17) + '…' : s;
@@ -1890,6 +2073,12 @@
       items.push(menuItem('+ 행 추가 (맨 아래)', addRow));
       items.push(menuItem('+ 마일스톤' + atLabel, function () { addMilestone(t); }));
       items.push(menuItem('+ 범례 항목', addLegendItem));
+      var emptyClip = clipLabel();
+      if (emptyClip) {
+        items.push(menuItem(emptyClip + ' 붙여넣기', function () {
+          pasteClipboard(typeof t === 'number' && emptyClip === '마일스톤' ? { t: t } : undefined);
+        }, { key: 'Ctrl+V' }));
+      }
       items.push(menuSep());
       items.push(menuItem('되돌리기', function () { toolbarClick('btnUndo'); }, { key: 'Ctrl+Z', disabled: !undoBtn || undoBtn.disabled }));
       if (compareBox) {
@@ -1914,6 +2103,12 @@
       items.push(menuItem('+ 이벤트 점' + atLabel, function () { addMarker(r, 'marker', lane, t === null ? undefined : t); }));
       items.push(menuItem('+ 산출물' + atLabel, function () { addMarker(r, 'deliverable', lane, t === null ? undefined : t); }));
       items.push(menuItem('+ 마일스톤 이 행에' + atLabel, function () { addMilestone(t === null ? undefined : t, r); }));
+      var rowClip = clipLabel();
+      if (rowClip) {
+        items.push(menuItem((rowClip === '행' ? '아래에 행 붙여넣기' : '여기에 ' + rowClip + ' 붙여넣기' + atLabel), function () {
+          pasteClipboard({ row: r, lane: lane, t: t === null ? undefined : t });
+        }, { key: 'Ctrl+V' }));
+      }
       items.push(menuSep());
       items.push(menuItem('줄 추가 (' + (n + 1) + '줄로)', function () { setRowLanes(obj, n + 1); }, { disabled: n >= 6 }));
       if (n > 1) items.push(menuItem('줄 줄이기 (' + (n - 1) + '줄로)', function () { setRowLanes(obj, n - 1); }));
@@ -1921,6 +2116,8 @@
       items.push(menuItem('위에 행 삽입', function () { insertRow(r); }));
       items.push(menuItem('아래에 행 삽입', function () { insertRow(r + 1); }));
       items.push(menuItem('행 복제', function () { duplicateRow(r); }));
+      items.push(menuItem('행 복사', function () { copySelection(false); }, { key: 'Ctrl+C' }));
+      items.push(menuItem('행 잘라내기', function () { copySelection(true); }, { key: 'Ctrl+X', disabled: cfg.rows.length <= 1 }));
       items.push(menuItem('▲ 위로', function () { moveRow(-1); }, { disabled: r === 0 }));
       items.push(menuItem('▼ 아래로', function () { moveRow(1); }, { disabled: r >= cfg.rows.length - 1 }));
       items.push(menuSep());
@@ -1946,7 +2143,8 @@
       items.push(menuItem('문구 고치기', focusLabelInput));
       var cmpBar = compareToggleItem(bar);
       if (cmpBar) items.push(cmpBar);
-      items.push(menuItem('복제', duplicateSelection));
+      clipMenu(sel, obj, t).forEach(function (it) { items.push(it); });
+      items.push(menuItem('복제', duplicateSelection, { key: 'Ctrl+D' }));
       items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
       return items;
     }
@@ -1971,7 +2169,8 @@
       items.push(menuItem('문구 고치기', focusLabelInput));
       var cmpMk = compareToggleItem(mk);
       if (cmpMk) items.push(cmpMk);
-      items.push(menuItem('복제', duplicateSelection));
+      clipMenu(sel, obj, t).forEach(function (it) { items.push(it); });
+      items.push(menuItem('복제', duplicateSelection, { key: 'Ctrl+D' }));
       items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
       return items;
     }
@@ -2017,7 +2216,8 @@
       items.push(menuItem('문구 고치기', focusLabelInput));
       var cmpMs = compareToggleItem(ms);
       if (cmpMs) items.push(cmpMs);
-      items.push(menuItem('복제', duplicateSelection));
+      clipMenu(sel, obj, t).forEach(function (it) { items.push(it); });
+      items.push(menuItem('복제', duplicateSelection, { key: 'Ctrl+D' }));
       items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
       return items;
     }
@@ -2031,7 +2231,8 @@
       items.push(menuSep());
       items.push(menuItem('+ 범례 항목', addLegendItem));
       items.push(menuItem('문구 고치기', focusLabelInput));
-      items.push(menuItem('복제', duplicateSelection));
+      clipMenu(sel, obj, t).forEach(function (it) { items.push(it); });
+      items.push(menuItem('복제', duplicateSelection, { key: 'Ctrl+D' }));
       items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
       return items;
     }
@@ -2121,6 +2322,28 @@
   function onKeyDown(event) {
     var tag = (event.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      var k = (event.key || '').toLowerCase();
+      if (k === 'c' || k === 'x') {
+        /* 페이지 글자를 드래그로 고른 상태면 브라우저 복사를 그대로 둠 */
+        if (!selection && String(window.getSelection ? window.getSelection() : '')) return;
+        if (copySelection(k === 'x')) event.preventDefault();
+        return;
+      }
+      if (k === 'v') {
+        if (pasteClipboard()) event.preventDefault();
+        return;
+      }
+      if (k === 'd') {
+        if (selection && selection.kind !== 'row' && selection.kind !== 'legend' && selection.kind !== 'compareStyle') {
+          duplicateSelection();
+          event.preventDefault();
+        }
+        return;
+      }
+    }
+
     if (!selection) return;
 
     if (event.key === 'Delete' || event.key === 'Backspace') {
