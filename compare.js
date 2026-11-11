@@ -424,7 +424,8 @@
       if (ch.kind === 'milestone') {
         return band.base + L.rowMilestoneOffset + dy;
       }
-      return band.base + dy;
+      var lane = api.laneDy && typeof ch.row === 'number' ? api.laneDy(ch.row, ch.item) : 0;
+      return band.base + lane + dy;
     }
 
     function overlayY(ch, band, slotDy) {

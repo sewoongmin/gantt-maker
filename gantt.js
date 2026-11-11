@@ -17,6 +17,7 @@
     rowPadding: 9,             // 행 위/아래 여유 (자동 높이일 때 모든 행 동일)
     rowBarOffset: 52,
     rowMilestoneOffset: -10, // 막대 기준선 대비 삼각형 (음수면 위로)
+    laneGap: 12,               // 한 행 안 줄과 줄 사이 (윗줄 내용 끝 ~ 아랫줄 내용 시작)
     calloutGap: 26,            // 표 아래쪽 마일스톤 영역까지의 간격
     calloutTriangleWidth: 15,
     calloutTriangleHeight: 13,
@@ -100,6 +101,22 @@
 
   function pick(value, fallback) {
     return value === undefined || value === null ? fallback : value;
+  }
+
+  /* 한 행 안의 줄 번호 (0 = 첫 줄) */
+  function laneOf(item) {
+    var n = item ? Math.floor(+item.lane) : 0;
+    return n > 0 ? n : 0;
+  }
+
+  function laneCount(row) {
+    var n = Math.max(1, Math.floor(+row.lanes) || 1);
+    ['bars', 'markers', 'deliverables'].forEach(function (key) {
+      (row[key] || []).forEach(function (item) {
+        n = Math.max(n, laneOf(item) + 1);
+      });
+    });
+    return n;
   }
 
   function lines(text) {
@@ -592,6 +609,7 @@
     if (meta.row !== undefined && meta.row !== null) node.setAttribute('data-row', meta.row);
     if (meta.index !== undefined && meta.index !== null) node.setAttribute('data-index', meta.index);
     if (meta.part) node.setAttribute('data-part', meta.part);
+    if (meta.lane !== undefined && meta.lane !== null) node.setAttribute('data-lane', meta.lane);
     if (meta.cursor) node.setAttribute('style', 'cursor:' + meta.cursor);
     node.setAttribute('data-editor', 'hit');
     return node;
@@ -707,12 +725,16 @@
        * (예전에는 0 을 항상 포함해서, 삼각형이 기준선 아래에 있으면
        *  그 오프셋만큼 행 위쪽이 빈 채로 남았습니다.)
        */
-      var minY = null;
-      var maxY = null;
+      var nLanes = laneCount(row);
+      /* 줄마다 자기 기준선(0) 기준으로 위/아래 범위를 따로 잽니다 */
+      var ext = [];
+      for (var li = 0; li < nLanes; li++) ext.push({ top: null, bottom: null });
+      var lane = 0;
 
       function note(top, bot) {
-        if (minY === null || top < minY) minY = top;
-        if (maxY === null || bot > maxY) maxY = bot;
+        var e = ext[lane];
+        if (e.top === null || top < e.top) e.top = top;
+        if (e.bottom === null || bot > e.bottom) e.bottom = bot;
       }
 
       function labelExtent(dy, labelDy, count, size, lh, grow) {
@@ -722,6 +744,7 @@
       }
 
       (row.bars || []).forEach(function (bar) {
+        lane = laneOf(bar);
         var dy = pick(bar.dy, 0);
         var r = pick(bar.width, 3) / 2 + pick(bar.capSize, 4.6) + 2;
         note(dy - r, dy + r);
@@ -733,6 +756,7 @@
       });
 
       function measurePoint(mk, defaults) {
+        lane = laneOf(mk);
         var m = merge(defaults, mk);
         var dy = pick(m.dy, 0);
         var r = pick(m.size, 5.5) + 3;
@@ -751,6 +775,8 @@
         measurePoint(d, { type: 'diamond', size: 4.6, labelPos: 'below', labelSize: 11, labelDy: 16 });
       });
 
+      /* 행 안 마일스톤은 첫 줄 기준 */
+      lane = 0;
       msList.forEach(function (e) {
         measureMilestone(e.ms, note);
       });
@@ -760,16 +786,32 @@
         options.compareChanges.forEach(function (ch) {
           if (ch.row !== rowIdx) return;
           var b = GanttCompare.overlayBoundsRel(ch, L);
-          if (b) note(b.top, b.bottom);
+          if (!b) return;
+          lane = ch.kind === 'milestone' ? 0 : Math.min(laneOf(ch.item), nLanes - 1);
+          note(b.top, b.bottom);
         });
       }
 
-      if (minY === null) {
-        minY = -8;
-        maxY = 8;
+      /* 빈 줄은 한 줄 문구 + 막대 정도의 자리를 남김 (빈 1줄 행은 예전처럼 작게) */
+      ext.forEach(function (e) {
+        if (e.top !== null) return;
+        e.top = nLanes > 1 ? -23 : -8;
+        e.bottom = nLanes > 1 ? 9 : 8;
+      });
+
+      var offsets = [0];
+      for (var k = 1; k < nLanes; k++) {
+        offsets.push(offsets[k - 1] + ext[k - 1].bottom + L.laneGap - ext[k].top);
       }
 
-      return { top: minY, bottom: maxY };
+      var minY = ext[0].top;
+      var maxY = ext[0].bottom;
+      for (k = 1; k < nLanes; k++) {
+        minY = Math.min(minY, offsets[k] + ext[k].top);
+        maxY = Math.max(maxY, offsets[k] + ext[k].bottom);
+      }
+
+      return { top: minY, bottom: maxY, lanes: ext, offsets: offsets };
     }
 
     var comparePadRows = options.comparePadRows || {};
@@ -777,6 +819,8 @@
     var rowTops = [];
     var rowHeights = [];
     var rowBaselines = [];
+    var rowLaneOffsets = [];
+    var rowLaneBands = [];
     var cur = plotTop;
     cfg.rows.forEach(function (row, i) {
       var m = measureRow(row, rowMilestones[i], i);
@@ -792,14 +836,37 @@
       var extra = h - autoH;
       if (extra < 0) extra = 0;
       var nudge = row.barDy != null && row.barDy !== '' ? +row.barDy || 0 : 0;
-      /* 내용의 맨 위가 항상 rowPadding 자리에. 수동으로 키우면 가운데로 */
-      var baseline = cur + L.rowPadding - m.top + extra / 2 + nudge;
+      /* 내용의 맨 위가 항상 rowPadding 자리에. 수동으로 키우면 위·줄 사이·아래에 고르게 */
+      var nLanes = m.offsets.length;
+      var share = extra / (nLanes + 1);
+      var baseline = cur + L.rowPadding - m.top + share + nudge;
+      var offsets = m.offsets.map(function (o, k) {
+        return o + share * k;
+      });
+
+      /* 줄 경계: 윗줄 내용 끝과 아랫줄 내용 시작의 가운데 */
+      var bands = [];
+      for (var k = 0; k < nLanes; k++) {
+        var bTop = k === 0
+          ? cur
+          : baseline + (offsets[k - 1] + m.lanes[k - 1].bottom + offsets[k] + m.lanes[k].top) / 2;
+        if (k > 0) bands[k - 1].bottom = bTop;
+        bands.push({ top: bTop, bottom: cur + h });
+      }
 
       rowTops.push(cur);
       rowHeights.push(h);
       rowBaselines.push(baseline);
+      rowLaneOffsets.push(offsets);
+      rowLaneBands.push(bands);
       cur += h;
     });
+
+    function laneDy(rowIdx, item) {
+      var offs = rowLaneOffsets[rowIdx];
+      if (!offs) return 0;
+      return offs[Math.min(laneOf(item), offs.length - 1)] || 0;
+    }
     var plotBottom = cur;
 
     /* ---- 표 아래 마일스톤 영역 ---- */
@@ -1009,13 +1076,15 @@
           { x: L.padding, y: top, width: L.labelColWidth, height: h, fill: 'transparent' },
           { kind: 'row', row: i, cursor: 'pointer' }
         );
-        /* 기간 영역의 빈 곳 — 막대·표식 히트(gHit)보다 아래라 빈 곳만 잡힘 */
-        hit(
-          gRows,
-          'rect',
-          { x: plotX, y: top, width: plotW, height: h, fill: 'transparent' },
-          { kind: 'row', row: i }
-        );
+        /* 기간 영역의 빈 곳 — 막대·표식 히트(gHit)보다 아래라 빈 곳만 잡힘. 줄마다 따로 */
+        rowLaneBands[i].forEach(function (band, k) {
+          hit(
+            gRows,
+            'rect',
+            { x: plotX, y: band.top, width: plotW, height: Math.max(0, band.bottom - band.top), fill: 'transparent' },
+            { kind: 'row', row: i, lane: k }
+          );
+        });
       }
     });
 
@@ -1147,6 +1216,24 @@
         },
         gHit
       );
+      var selBands = rowLaneBands[sel.row];
+      var selBand = selBands && selBands.length > 1 && selBands[sel.lane || 0];
+      if (selBand) {
+        el(
+          'rect',
+          {
+            x: plotX + 1.5,
+            y: selBand.top + 1.5,
+            width: plotW - 3,
+            height: Math.max(0, selBand.bottom - selBand.top - 3),
+            fill: SELECT_COLOR,
+            'fill-opacity': 0.07,
+            'pointer-events': 'none',
+            'data-editor': 'select'
+          },
+          gHit
+        );
+      }
     }
 
     cfg.rows.forEach(function (row, i) {
@@ -1154,7 +1241,7 @@
       var cycleIdx = 0;
 
       (row.bars || []).forEach(function (bar, j) {
-        var by = base + pick(bar.dy, 0);
+        var by = base + laneDy(i, bar) + pick(bar.dy, 0);
         var x1 = xOf(bar.start);
         var x2 = xOf(bar.end);
         var c;
@@ -1265,7 +1352,7 @@
       pts.forEach(function (entry) {
         var mk = entry.mk;
         var mx = xOf(mk.at) + pick(mk.dx, 0);
-        var my = base + pick(mk.dy, 0);
+        var my = base + laneDy(i, mk) + pick(mk.dy, 0);
         marker(gBars, mx, my, pick(mk.type, 'filled'), color(cfg, mk.color, '#1F3864'), pick(mk.size, 5.5));
         var ml = lines(mk.label);
         if (ml.length) {
@@ -1629,6 +1716,7 @@
         rowTops: rowTops,
         rowHeights: rowHeights,
         rowBaselines: rowBaselines,
+        laneDy: laneDy,
         totalWidth: totalWidth,
         totalHeight: totalHeight,
         xOf: xOf
@@ -1649,6 +1737,11 @@
       rowTops: rowTops,
       rowHeights: rowHeights,
       rowBaselines: rowBaselines,
+      rowLaneBands: rowLaneBands,
+      laneDy: laneDy,
+      laneCount: function (rowIdx) {
+        return rowLaneOffsets[rowIdx] ? rowLaneOffsets[rowIdx].length : 1;
+      },
       xOf: xOf,
       timeAtX: function (px) {
         return visual.vToT((px - plotX) / L.periodWidth);

@@ -409,8 +409,88 @@
       row: node.hasAttribute('data-row') ? +node.getAttribute('data-row') : null,
       index: node.hasAttribute('data-index') ? +node.getAttribute('data-index') : null,
       part: node.getAttribute('data-part'),
+      lane: node.hasAttribute('data-lane') ? +node.getAttribute('data-lane') : null,
       compareType: node.getAttribute('data-compare-type')
     };
+  }
+
+  function laneOf(item) {
+    var n = item ? Math.floor(+item.lane) : 0;
+    return n > 0 ? n : 0;
+  }
+
+  function rowLaneCount(row) {
+    if (!row) return 1;
+    var n = Math.max(1, Math.floor(+row.lanes) || 1);
+    ['bars', 'markers', 'deliverables'].forEach(function (key) {
+      (row[key] || []).forEach(function (item) {
+        n = Math.max(n, laneOf(item) + 1);
+      });
+    });
+    return n;
+  }
+
+  function setLane(item, lane) {
+    if (lane > 0) item.lane = lane;
+    else delete item.lane;
+  }
+
+  /* 추가 버튼이 쓸 행·줄: 행을 눌렀으면 그 줄, 일정을 눌렀으면 그 일정의 줄 */
+  function selectedRowLane() {
+    if (!selection || selection.row === null || selection.row === undefined) return { row: 0, lane: 0 };
+    if (selection.kind === 'row') return { row: selection.row, lane: selection.lane || 0 };
+    return { row: selection.row, lane: laneOf(targetOf(selection)) };
+  }
+
+  /* 직접 넣은 dy(위아래 위치)가 서로 다르면 그 순서대로 줄을 나눕니다 */
+  function dyGroups(row) {
+    var values = [];
+    ['bars', 'markers', 'deliverables'].forEach(function (key) {
+      (row[key] || []).forEach(function (item) {
+        var v = Math.round(+item.dy || 0);
+        if (values.indexOf(v) < 0) values.push(v);
+      });
+    });
+    return values.sort(function (a, b) { return a - b; });
+  }
+
+  function splitLanesByDy(row) {
+    var values = dyGroups(row);
+    if (values.length < 2) return;
+    ctx.pushHistory();
+    ['bars', 'markers', 'deliverables'].forEach(function (key) {
+      (row[key] || []).forEach(function (item) {
+        setLane(item, values.indexOf(Math.round(+item.dy || 0)));
+        delete item.dy;
+      });
+    });
+    row.lanes = values.length;
+    delete row.height;
+    apply(false);
+  }
+
+  function setRowLanes(row, n) {
+    n = Math.max(1, Math.min(6, n));
+    ctx.pushHistory();
+    ['bars', 'markers', 'deliverables'].forEach(function (key) {
+      (row[key] || []).forEach(function (item) {
+        if (laneOf(item) > n - 1) setLane(item, n - 1);
+      });
+    });
+    if (n > 1) row.lanes = n;
+    else delete row.lanes;
+    if (selection && selection.kind === 'row' && (selection.lane || 0) > n - 1) selection.lane = n - 1;
+    apply(false);
+  }
+
+  function moveItemLane(item, rowIdx, lane) {
+    var row = ctx.getConfig().rows[rowIdx];
+    if (!row || lane < 0) return;
+    ctx.pushHistory();
+    setLane(item, lane);
+    delete item.dy;
+    if (lane + 1 > rowLaneCount(row)) row.lanes = lane + 1;
+    apply(false);
   }
 
   function sameItem(a, b) {
@@ -495,6 +575,7 @@
       row: meta.row,
       index: meta.index,
       part: meta.part,
+      lane: meta.kind === 'row' ? meta.lane || 0 : null,
       compareType: meta.compareType || null
     };
 
@@ -515,41 +596,50 @@
 
   /* -------------------------------------------------------------- 추가 / 삭제 */
 
-  function addBar(rowIdx) {
+  function addBar(rowIdx, lane) {
     var cfg = ctx.getConfig();
     var row = cfg.rows[rowIdx];
     if (!row) return;
+    lane = lane || 0;
     ctx.pushHistory();
     row.bars = row.bars || [];
-    var last = row.bars[row.bars.length - 1];
+    var same = row.bars.filter(function (b) { return laneOf(b) === lane; });
+    var last = same[same.length - 1];
     var s = last ? api.scale.parse(last.end) : 0;
     var e = Math.min(api.scale.total, s + 2);
     if (e - s < 0.5) { s = Math.max(0, api.scale.total - 2); e = api.scale.total; }
-    row.bars.push({
+    var bar = {
       id: 'bar-' + Date.now().toString(36),
       start: fmt(s), end: fmt(e), label: '새 구간',
       labelAt: 0.5, capStart: 'circle', capEnd: 'circle'
-    });
+    };
+    setLane(bar, lane);
+    row.bars.push(bar);
     selection = { kind: 'bar', row: rowIdx, index: row.bars.length - 1 };
     apply(false);
   }
 
-  function addMarker(rowIdx, kind) {
+  function addMarker(rowIdx, kind, lane) {
     var cfg = ctx.getConfig();
     var row = cfg.rows[rowIdx];
     if (!row) return;
     ctx.pushHistory();
     var mid = fmt(api.scale.total / 2);
+    var item;
     if (kind === 'deliverable') {
       row.deliverables = row.deliverables || [];
-      row.deliverables.push({ id: 'dv-' + Date.now().toString(36), at: mid, label: '산출물' });
+      item = { id: 'dv-' + Date.now().toString(36), at: mid, label: '산출물' };
+      setLane(item, lane || 0);
+      row.deliverables.push(item);
       selection = { kind: 'deliverable', row: rowIdx, index: row.deliverables.length - 1 };
     } else {
       row.markers = row.markers || [];
-      row.markers.push({
+      item = {
         id: 'mk-' + Date.now().toString(36),
         at: mid, type: 'filled', color: 'navy', label: '이벤트', labelPos: 'above'
-      });
+      };
+      setLane(item, lane || 0);
+      row.markers.push(item);
       selection = { kind: 'marker', row: rowIdx, index: row.markers.length - 1 };
     }
     apply(false);
@@ -705,9 +795,9 @@
       button('+ 행', addRow),
       button('+ 마일스톤', addMilestone),
       button('+ 범례', addLegendItem),
-      button('+ 구간', function () { addBar(selection && selection.row !== null ? selection.row : 0); }),
-      button('+ 이벤트 점', function () { addMarker(selection && selection.row !== null ? selection.row : 0, 'marker'); }),
-      button('+ 산출물', function () { addMarker(selection && selection.row !== null ? selection.row : 0, 'deliverable'); })
+      button('+ 구간', function () { var t = selectedRowLane(); addBar(t.row, t.lane); }),
+      button('+ 이벤트 점', function () { var t = selectedRowLane(); addMarker(t.row, 'marker', t.lane); }),
+      button('+ 산출물', function () { var t = selectedRowLane(); addMarker(t.row, 'deliverable', t.lane); })
     ]);
     host.appendChild(addBox);
 
@@ -902,6 +992,8 @@
       apply(false);
     })));
 
+    appendLaneField(body, bar);
+
     var barDy = bar.labelDy === undefined ? -12 : bar.labelDy;
     /* labelAt 미지정·구버전(0.4 등)은 중앙(0.5)으로 맞춤 */
     if (bar.labelAt === undefined || bar.labelAt === null) bar.labelAt = 0.5;
@@ -960,6 +1052,8 @@
       apply(false);
     })));
 
+    appendLaneField(body, mk);
+
     var mkBase = (mk.labelPos || (isDeliv ? 'below' : 'above')) === 'below' ? 16 : -12;
     var mkDy = pickNum(mk.labelDy, mkBase);
     body.appendChild(field('문구 위치', h('div', { class: 'row-inline' }, [
@@ -993,6 +1087,23 @@
     })));
 
     appendCompareOffsetField(body, mk);
+  }
+
+  /* 한 행 안에서 몇 번째 줄에 둘지 (마지막 항목은 새 줄 만들기) */
+  function appendLaneField(body, item) {
+    var rowIdx = selection.row;
+    var row = ctx.getConfig().rows[rowIdx];
+    if (!row) return;
+    var n = rowLaneCount(row);
+    var cur = laneOf(item);
+    var opts = [];
+    for (var k = 0; k < n; k++) opts.push([k, (k + 1) + '줄']);
+    opts.push([n, (n + 1) + '줄 (새 줄)']);
+    body.appendChild(field('줄', h('div', { class: 'row-inline' }, [
+      select(opts, cur, function (v) { moveItemLane(item, rowIdx, +v); }),
+      button('▲', function () { if (cur > 0) moveItemLane(item, rowIdx, cur - 1); }, 'tiny'),
+      button('▼', function () { moveItemLane(item, rowIdx, cur + 1); }, 'tiny')
+    ]), n > 1 ? '한 행 안 ' + n + '줄 중 ' + (cur + 1) + '번째 · Alt+↑↓ 로도 이동' : '새 줄을 고르면 이 행이 두 줄이 됩니다'));
   }
 
   function appendCompareOffsetField(body, item) {
@@ -1354,17 +1465,52 @@
       }, 'tiny')
     ]), '행을 늘리면 내용이 가운데로 옵니다'));
 
-    body.appendChild(
-      h('div', { class: 'ins-add sub' }, [
-        button('+ 구간', function () { addBar(selection.row); }),
-        button('+ 이벤트 점', function () { addMarker(selection.row, 'marker'); }),
-        button('+ 산출물', function () { addMarker(selection.row, 'deliverable'); })
-      ])
-    );
+    var lanes = rowLaneCount(row);
+    var curLane = Math.min(selection.lane || 0, lanes - 1);
+    body.appendChild(field('줄 수', h('div', { class: 'row-inline' }, [
+      button('−', function () { setRowLanes(row, lanes - 1); }, 'tiny'),
+      h('span', { class: 'ins-val', text: lanes + '줄' }),
+      button('+', function () { setRowLanes(row, lanes + 1); }, 'tiny')
+    ]), lanes > 1
+      ? '한 행에 구간을 ' + lanes + '줄로 쌓습니다 · 줄 간격은 내용에 맞춰 자동'
+      : '+ 를 누르면 한 행에 구간을 두 줄 이상 넣을 수 있습니다'));
+
+    if (lanes === 1 && dyGroups(row).length > 1) {
+      body.appendChild(field('줄 정리', button('위아래 위치(dy)대로 줄 나누기', function () {
+        splitLanesByDy(row);
+      }, 'tiny'), '직접 dy 를 넣어 두 줄처럼 만든 행을 줄 ' + dyGroups(row).length + '개로 바꿉니다'));
+    }
+
+    var rowIdx = selection.row;
+    for (var lk = 0; lk < lanes; lk++) {
+      (function (lane) {
+        var btns = [
+          button('+ 구간', function () { addBar(rowIdx, lane); }),
+          button('+ 이벤트 점', function () { addMarker(rowIdx, 'marker', lane); }),
+          button('+ 산출물', function () { addMarker(rowIdx, 'deliverable', lane); })
+        ];
+        if (lanes > 1) {
+          btns.unshift(h('button', {
+            class: 'ins-btn tiny lane-tag' + (lane === curLane ? ' primary' : ''),
+            text: (lane + 1) + '줄',
+            title: '이 줄 선택',
+            onclick: function () {
+              selection = { kind: 'row', row: rowIdx, index: null, lane: lane };
+              apply(false);
+            }
+          }));
+        }
+        body.appendChild(h('div', { class: 'ins-add sub' }, btns));
+      })(lk);
+    }
+
+    function tagOf(kind, item) {
+      return lanes > 1 ? kind + ' ' + (laneOf(item) + 1) + '줄' : kind;
+    }
 
     var list = h('div', { class: 'outline-list' }, []);
     (row.bars || []).forEach(function (bar, j) {
-      list.appendChild(itemRow('구간', bar.label || '(문구 없음)', function () {
+      list.appendChild(itemRow(tagOf('구간', bar), bar.label || '(문구 없음)', function () {
         selection = { kind: 'bar', row: selection.row, index: j };
         apply(false);
       }, function () {
@@ -1374,7 +1520,7 @@
       }));
     });
     (row.markers || []).forEach(function (mk, j) {
-      list.appendChild(itemRow('점', mk.label || '(문구 없음)', function () {
+      list.appendChild(itemRow(tagOf('점', mk), mk.label || '(문구 없음)', function () {
         selection = { kind: 'marker', row: selection.row, index: j };
         apply(false);
       }, function () {
@@ -1384,7 +1530,7 @@
       }));
     });
     (row.deliverables || []).forEach(function (d, j) {
-      list.appendChild(itemRow('산출물', d.label || '(문구 없음)', function () {
+      list.appendChild(itemRow(tagOf('산출물', d), d.label || '(문구 없음)', function () {
         selection = { kind: 'deliverable', row: selection.row, index: j };
         apply(false);
       }, function () {
@@ -1439,6 +1585,12 @@
       var objV = targetOf(selection);
       if (!objV) return;
       if (selection.kind === 'compareStyle' || selection.kind === 'row' || selection.kind === 'legend') return;
+      if (event.altKey && (selection.kind === 'bar' || selection.kind === 'marker' || selection.kind === 'deliverable')) {
+        var toLane = laneOf(objV) + (event.key === 'ArrowUp' ? -1 : 1);
+        if (toLane >= 0) moveItemLane(objV, selection.row, toLane);
+        event.preventDefault();
+        return;
+      }
       ctx.pushHistory();
       nudgeVertical(
         objV,

@@ -249,6 +249,8 @@ body.edit-on .chart svg { user-select: none; }
 
 .ins-add.sub { border-bottom: 0; }
 .ins-add button { padding: 5px 8px; font-size: 12px; }
+.ins-add.sub + .ins-add.sub { padding-top: 0; }
+.ins-add .lane-tag { min-width: 38px; font-weight: 600; }
 
 .ins-body { padding-top: 10px; }
 

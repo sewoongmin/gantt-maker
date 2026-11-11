@@ -264,8 +264,8 @@
 
   /* 비교의 '변경 전'은 일정(날짜)만 기준본을 쓰고, 문구 간격·위치 등 모양은 현재 차트를 따릅니다. */
   var MS_PRESENTATION = ['titleDy', 'dy', 'dx', 'titleSize', 'titleColor', 'triangle', 'itemsDx', 'itemSize'];
-  var POINT_PRESENTATION = ['dy', 'dx', 'labelDy', 'labelPos', 'labelSize', 'size'];
-  var BAR_PRESENTATION = ['dy', 'dx', 'labelDy', 'labelAt', 'labelSize', 'width', 'capSize'];
+  var POINT_PRESENTATION = ['lane', 'dy', 'dx', 'labelDy', 'labelPos', 'labelSize', 'size'];
+  var BAR_PRESENTATION = ['lane', 'dy', 'dx', 'labelDy', 'labelAt', 'labelSize', 'width', 'capSize'];
 
   function copyProps(dst, src, keys) {
     if (!src) return;
@@ -303,7 +303,7 @@
     (beforeCfg.rows || []).forEach(function (row, ri) {
       var srcRow = cur['row#' + ri];
       if (srcRow) {
-        copyProps(row, srcRow, ['height', 'barDy']);
+        copyProps(row, srcRow, ['height', 'barDy', 'lanes']);
       }
       (row.bars || []).forEach(function (b) {
         copyProps(b, b.id && cur['bar:' + b.id], BAR_PRESENTATION);
