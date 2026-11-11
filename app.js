@@ -263,7 +263,7 @@
   /* ------------------------------------------------------------------ 렌더링 */
 
   /* 비교의 '변경 전'은 일정(날짜)만 기준본을 쓰고, 문구 간격·위치 등 모양은 현재 차트를 따릅니다. */
-  var MS_PRESENTATION = ['titleDy', 'dy', 'dx', 'titleSize', 'titleColor', 'triangle', 'itemsDx', 'itemSize'];
+  var MS_PRESENTATION = ['lane', 'fromLane', 'toLane', 'titleDy', 'dy', 'dx', 'titleSize', 'titleColor', 'triangle', 'itemsDx', 'itemSize'];
   var POINT_PRESENTATION = ['lane', 'dy', 'dx', 'labelDy', 'labelPos', 'labelSize', 'size'];
   var BAR_PRESENTATION = ['lane', 'dy', 'dx', 'labelDy', 'labelAt', 'labelSize', 'width', 'capSize'];
 

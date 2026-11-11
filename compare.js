@@ -421,10 +421,10 @@
 
     function yBarOf(ch, band) {
       var dy = (ch.item && ch.item.dy) || 0;
-      if (ch.kind === 'milestone') {
-        return band.base + L.rowMilestoneOffset + dy;
-      }
       var lane = api.laneDy && typeof ch.row === 'number' ? api.laneDy(ch.row, ch.item) : 0;
+      if (ch.kind === 'milestone') {
+        return band.base + lane + L.rowMilestoneOffset + dy;
+      }
       return band.base + lane + dy;
     }
 

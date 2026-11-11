@@ -775,9 +775,9 @@
         measurePoint(d, { type: 'diamond', size: 4.6, labelPos: 'below', labelSize: 11, labelDy: 16 });
       });
 
-      /* 행 안 마일스톤은 첫 줄 기준 */
-      lane = 0;
+      /* 행 안 마일스톤 삼각형은 ms.lane 줄 기준 (없으면 첫 줄) */
       msList.forEach(function (e) {
+        lane = Math.min(laneOf(e.ms), nLanes - 1);
         measureMilestone(e.ms, note);
       });
 
@@ -787,7 +787,7 @@
           if (ch.row !== rowIdx) return;
           var b = GanttCompare.overlayBoundsRel(ch, L);
           if (!b) return;
-          lane = ch.kind === 'milestone' ? 0 : Math.min(laneOf(ch.item), nLanes - 1);
+          lane = Math.min(laneOf(ch.item), nLanes - 1);
           note(b.top, b.bottom);
         });
       }
@@ -1142,19 +1142,55 @@
     var gDrop = el('g', null, svg);
     function milestoneY(entry) {
       if (typeof entry.ms.row === 'number' && rowBaselines[entry.ms.row] !== undefined) {
-        return rowBaselines[entry.ms.row] + pick(entry.ms.dy, 0) + L.rowMilestoneOffset;
+        return rowBaselines[entry.ms.row] + laneDy(entry.ms.row, entry.ms) + pick(entry.ms.dy, 0) + L.rowMilestoneOffset;
       }
       return calloutTop;
+    }
+
+    function laneY(rowIdx, lane) {
+      var offs = rowLaneOffsets[rowIdx] || [0];
+      return rowBaselines[rowIdx] + (offs[Math.max(0, Math.min(lane, offs.length - 1))] || 0);
+    }
+
+    /* 줄을 지정하지 않은 점선 끝: 그 시점을 지나는 일정이 있는 줄 중 삼각형 쪽에 가까운 줄 */
+    function autoLane(rowIdx, t, nearBottom) {
+      var row = cfg.rows[rowIdx];
+      var n = (rowLaneOffsets[rowIdx] || [0]).length;
+      if (!row || n < 2) return 0;
+      var eps = 0.01;
+      var hits = [];
+      (row.bars || []).forEach(function (b) {
+        var s = scale.parse(b.start);
+        var e = scale.parse(b.end);
+        if (t >= Math.min(s, e) - eps && t <= Math.max(s, e) + eps) hits.push(laneOf(b));
+      });
+      (row.markers || []).concat(row.deliverables || []).forEach(function (m) {
+        if (Math.abs(scale.parse(m.at) - t) <= eps) hits.push(laneOf(m));
+      });
+      if (!hits.length) return nearBottom ? n - 1 : 0;
+      return nearBottom ? Math.max.apply(null, hits) : Math.min.apply(null, hits);
+    }
+
+    function pickLane(value, rowIdx, t, nearBottom) {
+      if (typeof value === 'number' && isFinite(value)) return value;
+      return autoLane(rowIdx, t, nearBottom);
     }
 
     cfg.milestones.forEach(function (ms, idx) {
       var lineStyle = pick(ms.line, 'dashed');
       if (lineStyle === 'none' || ms.fromRow === null || ms.fromRow === undefined) return;
       var x = xOf(ms.at) + pick(ms.dx, 0);
+      var tAt = scale.parse(ms.at);
 
-      /* 시작행: 그 행의 막대 기준선 (또는 표 맨 위) */
-      var yStart =
-        ms.fromRow === 'top' ? plotTop : rowBaselines[Math.min(ms.fromRow, cfg.rows.length - 1)];
+      /* 시작행: 그 행 안 고른 줄(또는 자동)의 막대 기준선, 또는 표 맨 위 */
+      var yStart;
+      if (ms.fromRow === 'top') {
+        yStart = plotTop;
+      } else {
+        var fromIdx = Math.min(ms.fromRow, cfg.rows.length - 1);
+        var endRowIdx = typeof ms.toRow === 'number' ? ms.toRow : typeof ms.row === 'number' ? ms.row : cfg.rows.length;
+        yStart = laneY(fromIdx, pickLane(ms.fromLane, fromIdx, tAt, endRowIdx >= fromIdx));
+      }
 
       /* 종료행(toRow):
          - 숫자행 이고 표시 위치(row) 와 같으면 → 그 행 안 삼각형까지
@@ -1164,7 +1200,9 @@
          예) fromRow:0, toRow:1, row:1  → 1행 막대에서 2행 삼각형까지 */
       var yEnd;
       if (typeof ms.toRow === 'number' && rowBaselines[ms.toRow] !== undefined) {
-        yEnd = ms.toRow === ms.row ? milestoneY({ ms: ms, index: idx }) : rowBaselines[ms.toRow];
+        yEnd = ms.toRow === ms.row
+          ? milestoneY({ ms: ms, index: idx })
+          : laneY(ms.toRow, pickLane(ms.toLane, ms.toRow, tAt, typeof ms.fromRow === 'number' && ms.fromRow > ms.toRow));
       } else if (ms.toRow === 'bottom') {
         yEnd = calloutTop;
       } else {

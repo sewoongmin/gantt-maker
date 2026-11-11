@@ -1239,21 +1239,48 @@
       apply(false);
     })));
 
+    /* 여러 줄 행이면 행 옆에 줄 고르기 (auto: 그 시점의 일정이 있는 줄) */
+    function laneSelect(rowIdx, value, withAuto, onpick) {
+      var row = typeof rowIdx === 'number' ? cfg.rows[rowIdx] : null;
+      var n = rowLaneCount(row);
+      if (!row || n < 2) return null;
+      var opts = withAuto ? [['auto', '자동 줄']] : [];
+      for (var k = 0; k < n; k++) opts.push([k, (k + 1) + '줄']);
+      var cur = typeof value === 'number' ? Math.min(value, n - 1) : withAuto ? 'auto' : 0;
+      return select(opts, cur, function (v) {
+        ctx.pushHistory();
+        onpick(v === 'auto' ? undefined : +v);
+        apply(false);
+      });
+    }
+
+    function setOrDelete(key, v) {
+      if (v === undefined || (key === 'lane' && v === 0)) delete ms[key];
+      else ms[key] = v;
+    }
+
     var rowOptions = cfg.rows.map(function (r, i) {
       return [i, rowName(r, i) + ' 안'];
     });
     rowOptions.push(['null', '표 아래']);
-    body.appendChild(field('표시 위치', select(rowOptions, typeof ms.row === 'number' ? ms.row : 'null', function (v) {
+    var rowSel = select(rowOptions, typeof ms.row === 'number' ? ms.row : 'null', function (v) {
       ctx.pushHistory();
+      delete ms.lane;
       if (v === 'null') {
         ms.row = null;
       } else {
         ms.row = +v;
         /* 표시 위치를 바꾸면 점선 끝도 그 행에 맞춥니다 (직접 고친 적 없으면) */
-        if (ms.toRow === undefined || typeof ms.toRow === 'number') ms.toRow = ms.row;
+        if (ms.toRow === undefined || typeof ms.toRow === 'number') {
+          ms.toRow = ms.row;
+          delete ms.toLane;
+        }
       }
       apply(false);
-    }), '삼각형 · 문구가 놓이는 행'));
+    });
+    var rowLaneSel = laneSelect(ms.row, ms.lane || 0, false, function (v) { setOrDelete('lane', v); });
+    body.appendChild(field('표시 위치', h('div', { class: 'row-inline' }, [rowSel, rowLaneSel]),
+      rowLaneSel ? '삼각형 · 문구가 놓이는 행과 줄' : '삼각형 · 문구가 놓이는 행'));
 
     var fromOptions = [['none', '없음 (점선 숨김)'], ['top', '표 맨 위']].concat(
       cfg.rows.map(function (r, i) {
@@ -1261,8 +1288,9 @@
       })
     );
     var fromValue = ms.fromRow === null || ms.fromRow === undefined ? 'none' : ms.fromRow;
-    body.appendChild(field('점선 시작', select(fromOptions, fromValue, function (v) {
+    var fromSel = select(fromOptions, fromValue, function (v) {
       ctx.pushHistory();
+      delete ms.fromLane;
       if (v === 'none') {
         ms.fromRow = null;
         ms.line = 'none';
@@ -1274,7 +1302,10 @@
         if (ms.line === 'none') ms.line = 'dashed';
       }
       apply(false);
-    })));
+    });
+    var fromLaneSel = laneSelect(ms.fromRow, ms.fromLane, true, function (v) { setOrDelete('fromLane', v); });
+    body.appendChild(field('점선 시작', h('div', { class: 'row-inline' }, [fromSel, fromLaneSel]),
+      fromLaneSel ? '여러 줄 행: 어느 줄에서 시작할지 · 자동 = 그 시점을 지나는 일정의 줄' : null));
 
     var toOptions = [['auto', '표시 위치(삼각형)까지']].concat(
       cfg.rows.map(function (r, i) {
@@ -1283,8 +1314,9 @@
     );
     toOptions.push(['bottom', '표 아래까지']);
     var toValue = typeof ms.toRow === 'number' ? ms.toRow : ms.toRow === 'bottom' ? 'bottom' : 'auto';
-    body.appendChild(field('점선 끝', select(toOptions, toValue, function (v) {
+    var toSel = select(toOptions, toValue, function (v) {
       ctx.pushHistory();
+      delete ms.toLane;
       if (v === 'auto') delete ms.toRow;
       else if (v === 'bottom') ms.toRow = 'bottom';
       else {
@@ -1292,10 +1324,17 @@
         /* 끝 행을 지정하면 삼각형도 그 행 안에 두어 1행→2행 마일스톤이 자연스럽게 보이게 */
         if (typeof ms.row === 'number' || ms.row === null || ms.row === undefined) {
           ms.row = ms.toRow;
+          delete ms.lane;
         }
       }
       apply(false);
-    }), '예: 시작=비행시험, 끝=상황인지 → 1행에서 2행으로'));
+    });
+    /* 끝 행 = 삼각형 행이면 삼각형까지 가므로 줄은 「표시 위치」에서 고름 */
+    var toLaneSel = typeof ms.toRow === 'number' && ms.toRow !== ms.row
+      ? laneSelect(ms.toRow, ms.toLane, true, function (v) { setOrDelete('toLane', v); })
+      : null;
+    body.appendChild(field('점선 끝', h('div', { class: 'row-inline' }, [toSel, toLaneSel]),
+      '예: 시작=비행시험, 끝=상황인지 → 1행에서 2행으로'));
 
     body.appendChild(field('점선 모양', select([['dashed', '점선'], ['solid', '실선'], ['none', '없음']], ms.line || 'dashed', function (v) {
       ctx.pushHistory();
