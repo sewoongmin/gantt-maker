@@ -596,7 +596,7 @@
 
   /* -------------------------------------------------------------- 추가 / 삭제 */
 
-  function addBar(rowIdx, lane) {
+  function addBar(rowIdx, lane, startT) {
     var cfg = ctx.getConfig();
     var row = cfg.rows[rowIdx];
     if (!row) return;
@@ -605,7 +605,7 @@
     row.bars = row.bars || [];
     var same = row.bars.filter(function (b) { return laneOf(b) === lane; });
     var last = same[same.length - 1];
-    var s = last ? api.scale.parse(last.end) : 0;
+    var s = typeof startT === 'number' ? startT : last ? api.scale.parse(last.end) : 0;
     var e = Math.min(api.scale.total, s + 2);
     if (e - s < 0.5) { s = Math.max(0, api.scale.total - 2); e = api.scale.total; }
     var bar = {
@@ -619,12 +619,12 @@
     apply(false);
   }
 
-  function addMarker(rowIdx, kind, lane) {
+  function addMarker(rowIdx, kind, lane, atT) {
     var cfg = ctx.getConfig();
     var row = cfg.rows[rowIdx];
     if (!row) return;
     ctx.pushHistory();
-    var mid = fmt(api.scale.total / 2);
+    var mid = fmt(typeof atT === 'number' ? atT : api.scale.total / 2);
     var item;
     if (kind === 'deliverable') {
       row.deliverables = row.deliverables || [];
@@ -645,21 +645,23 @@
     apply(false);
   }
 
-  function addMilestone() {
+  function addMilestone(atT, rowIdx) {
     var cfg = ctx.getConfig();
     ctx.pushHistory();
     cfg.milestones = cfg.milestones || [];
-    var endRow = cfg.rows.length ? cfg.rows.length - 1 : null;
-    cfg.milestones.push({
+    var endRow = typeof rowIdx === 'number' ? rowIdx : cfg.rows.length ? cfg.rows.length - 1 : null;
+    var ms = {
       id: 'ms-' + Date.now().toString(36),
-      at: fmt(api.scale.total / 2),
+      at: fmt(typeof atT === 'number' ? atT : api.scale.total / 2),
       color: 'red',
       line: 'dashed',
-      fromRow: 0,
+      fromRow: endRow ? 0 : 'top',
       toRow: endRow,
       row: endRow,
       title: '새 마일스톤'
-    });
+    };
+    if (endRow === null) ms.fromRow = 'top';
+    cfg.milestones.push(ms);
     selection = { kind: 'milestone', row: null, index: cfg.milestones.length - 1 };
     apply(false);
   }
@@ -1590,6 +1592,411 @@
     );
   }
 
+  /* -------------------------------------------------------------- 우클릭 메뉴 */
+
+  var menuEl = null;
+  var menuAt = null;   /* { x, y, t } — 모양 바꾸기 뒤 같은 자리에 다시 열 때 */
+
+  function closeMenu() {
+    if (menuEl && menuEl.parentNode) menuEl.parentNode.removeChild(menuEl);
+    menuEl = null;
+  }
+
+  /* 구조를 바꾸는 동작: 메뉴를 닫고 실행 */
+  function menuItem(label, fn, opts) {
+    opts = opts || {};
+    return h('button', {
+      class: 'cm-item' + (opts.danger ? ' danger' : ''),
+      disabled: opts.disabled ? 'disabled' : null,
+      onclick: function () {
+        closeMenu();
+        fn();
+      }
+    }, [h('span', { text: label }), opts.key ? h('span', { class: 'cm-key', text: opts.key }) : null]);
+  }
+
+  /* 모양만 바꾸는 동작: 실행 후 같은 자리에 메뉴를 다시 그려 상태 표시 */
+  function keepOpen(fn) {
+    return function () {
+      fn();
+      if (menuAt) showMenu(menuAt.x, menuAt.y, menuAt.t);
+    };
+  }
+
+  function menuSep() {
+    return h('div', { class: 'cm-sep' });
+  }
+
+  function menuTitle(text) {
+    return h('div', { class: 'cm-title', text: text });
+  }
+
+  function menuRow(label, control) {
+    return h('div', { class: 'cm-row' }, [h('span', { class: 'cm-label', text: label }), control]);
+  }
+
+  function menuChips(options, current, onpick) {
+    return h('div', { class: 'cm-chips' }, options.map(function (opt) {
+      return h('button', {
+        class: 'cm-chip' + (String(opt[0]) === String(current) ? ' on' : ''),
+        text: opt[1],
+        onclick: keepOpen(function () {
+          ctx.pushHistory();
+          onpick(opt[0]);
+          apply(false);
+        })
+      });
+    }));
+  }
+
+  function menuSwatches(current, allowAuto, onpick, useHex) {
+    var cfg = ctx.getConfig();
+    var palette = cfg.palette && cfg.palette.length ? cfg.palette : Gantt.DEFAULT_PALETTE;
+    var list = [];
+    if (allowAuto) {
+      list.push(h('button', {
+        class: 'cm-swatch auto' + (!current ? ' on' : ''),
+        title: '자동 (교대 색)',
+        text: '자동',
+        onclick: keepOpen(function () { ctx.pushHistory(); onpick(undefined); apply(false); })
+      }));
+    }
+    palette.forEach(function (p) {
+      var value = useHex ? p.color : p.name;
+      var on = useHex ? String(current || '').toLowerCase() === p.color.toLowerCase() : current === p.name;
+      var b = h('button', {
+        class: 'cm-swatch' + (on ? ' on' : ''),
+        title: p.label,
+        onclick: keepOpen(function () { ctx.pushHistory(); onpick(value); apply(false); })
+      });
+      b.style.background = p.color;
+      list.push(b);
+    });
+    return h('div', { class: 'cm-swatches' }, list);
+  }
+
+  function clickTime(clientX) {
+    if (!api) return null;
+    var x = clientToSvgX(clientX);
+    if (x < api.plotX || x > api.plotX + api.plotW) return null;
+    var t = snap(api.timeAtX(x));
+    return Math.max(0, Math.min(api.scale.total, t));
+  }
+
+  function toolbarClick(id) {
+    var b = document.getElementById(id);
+    if (b && !b.disabled) b.click();
+  }
+
+  function shiftMilestoneRows(fromIdx, delta) {
+    (ctx.getConfig().milestones || []).forEach(function (ms) {
+      ['row', 'fromRow', 'toRow'].forEach(function (key) {
+        if (typeof ms[key] === 'number' && ms[key] >= fromIdx) ms[key] += delta;
+      });
+    });
+  }
+
+  function insertRow(at) {
+    var cfg = ctx.getConfig();
+    ctx.pushHistory();
+    cfg.rows.splice(at, 0, { label: '새 행', bars: [] });
+    shiftMilestoneRows(at, 1);
+    selection = { kind: 'row', row: at, index: null, lane: 0 };
+    apply(false);
+  }
+
+  function duplicateRow(i) {
+    var cfg = ctx.getConfig();
+    var src = cfg.rows[i];
+    if (!src) return;
+    ctx.pushHistory();
+    var copy = JSON.parse(JSON.stringify(src));
+    delete copy.id;
+    ['bars', 'markers', 'deliverables'].forEach(function (key) {
+      (copy[key] || []).forEach(function (item) { delete item.id; });
+    });
+    cfg.rows.splice(i + 1, 0, copy);
+    shiftMilestoneRows(i + 1, 1);
+    selection = { kind: 'row', row: i + 1, index: null, lane: 0 };
+    apply(false);
+  }
+
+  function splitBar(rowIdx, index, t) {
+    var row = ctx.getConfig().rows[rowIdx];
+    var bar = row && row.bars[index];
+    if (!bar) return;
+    ctx.pushHistory();
+    var copy = JSON.parse(JSON.stringify(bar));
+    copy.id = 'bar-' + Date.now().toString(36);
+    copy.label = '새 구간';
+    copy.start = fmt(t);
+    bar.end = fmt(t);
+    row.bars.splice(index + 1, 0, copy);
+    selection = { kind: 'bar', row: rowIdx, index: index + 1 };
+    apply(false);
+  }
+
+  function appendBarAfter(rowIdx, index) {
+    var bar = ctx.getConfig().rows[rowIdx].bars[index];
+    addBar(rowIdx, laneOf(bar), api.scale.parse(bar.end));
+  }
+
+  function canSplit(bar, t) {
+    if (typeof t !== 'number') return false;
+    var s = api.scale.parse(bar.start);
+    var e = api.scale.parse(bar.end);
+    return t > Math.min(s, e) + 0.01 && t < Math.max(s, e) - 0.01;
+  }
+
+  function laneMenu(item, rowIdx) {
+    var n = rowLaneCount(ctx.getConfig().rows[rowIdx]);
+    var cur = laneOf(item);
+    var out = [];
+    if (cur > 0) out.push(menuItem('▲ 윗줄로 (' + cur + '줄)', function () { moveItemLane(item, rowIdx, cur - 1); }, { key: 'Alt+↑' }));
+    out.push(menuItem(cur + 1 < n ? '▼ 아랫줄로 (' + (cur + 2) + '줄)' : '▼ 새 줄로 (' + (cur + 2) + '줄)', function () {
+      moveItemLane(item, rowIdx, cur + 1);
+    }, { key: 'Alt+↓' }));
+    return out;
+  }
+
+  function compareToggleItem(item) {
+    if (!(ctx.isCompareMode && ctx.isCompareMode())) return null;
+    return menuItem(item.compareHidden ? '비교 표시 보이기' : '비교 표시 숨기기', function () {
+      ctx.pushHistory();
+      if (item.compareHidden) delete item.compareHidden;
+      else item.compareHidden = true;
+      apply(false);
+    });
+  }
+
+  function itemName(text, fallback) {
+    var s = String(text || fallback).replace(/\n/g, ' ');
+    return s.length > 18 ? s.slice(0, 17) + '…' : s;
+  }
+
+  function buildMenuItems(t) {
+    var cfg = ctx.getConfig();
+    var sel = selection;
+    var obj = sel ? targetOf(sel) : null;
+    var atLabel = typeof t === 'number' ? ' (' + fmt(t) + ')' : '';
+    var items = [];
+
+    if (!sel || !obj) {
+      var undoBtn = document.getElementById('btnUndo');
+      var compareBox = document.getElementById('compareMode');
+      items.push(menuTitle('차트'));
+      items.push(menuItem('+ 행 추가 (맨 아래)', addRow));
+      items.push(menuItem('+ 마일스톤' + atLabel, function () { addMilestone(t); }));
+      items.push(menuItem('+ 범례 항목', addLegendItem));
+      items.push(menuSep());
+      items.push(menuItem('되돌리기', function () { toolbarClick('btnUndo'); }, { key: 'Ctrl+Z', disabled: !undoBtn || undoBtn.disabled }));
+      if (compareBox) {
+        items.push(menuItem(compareBox.checked ? '변경 비교 끄기' : '변경 비교 켜기', function () {
+          compareBox.checked = !compareBox.checked;
+          compareBox.dispatchEvent(new Event('change'));
+        }));
+      }
+      items.push(menuSep());
+      items.push(menuItem('PNG 저장', function () { toolbarClick('btnPng'); }));
+      items.push(menuItem('SVG 저장', function () { toolbarClick('btnSvg'); }));
+      items.push(menuItem('간트 내보내기 (JSON)', function () { toolbarClick('btnExportGantt'); }));
+      return items;
+    }
+
+    if (sel.kind === 'row') {
+      var r = sel.row;
+      var lane = sel.lane || 0;
+      var n = rowLaneCount(obj);
+      items.push(menuTitle('행 · ' + itemName(obj.label, '행 ' + (r + 1)) + (n > 1 ? ' · ' + (lane + 1) + '줄' : '')));
+      items.push(menuItem('+ 구간 여기에' + atLabel, function () { addBar(r, lane, t === null ? undefined : t); }));
+      items.push(menuItem('+ 이벤트 점' + atLabel, function () { addMarker(r, 'marker', lane, t === null ? undefined : t); }));
+      items.push(menuItem('+ 산출물' + atLabel, function () { addMarker(r, 'deliverable', lane, t === null ? undefined : t); }));
+      items.push(menuItem('+ 마일스톤 이 행에' + atLabel, function () { addMilestone(t === null ? undefined : t, r); }));
+      items.push(menuSep());
+      items.push(menuItem('줄 추가 (' + (n + 1) + '줄로)', function () { setRowLanes(obj, n + 1); }, { disabled: n >= 6 }));
+      if (n > 1) items.push(menuItem('줄 줄이기 (' + (n - 1) + '줄로)', function () { setRowLanes(obj, n - 1); }));
+      items.push(menuSep());
+      items.push(menuItem('위에 행 삽입', function () { insertRow(r); }));
+      items.push(menuItem('아래에 행 삽입', function () { insertRow(r + 1); }));
+      items.push(menuItem('행 복제', function () { duplicateRow(r); }));
+      items.push(menuItem('▲ 위로', function () { moveRow(-1); }, { disabled: r === 0 }));
+      items.push(menuItem('▼ 아래로', function () { moveRow(1); }, { disabled: r >= cfg.rows.length - 1 }));
+      items.push(menuSep());
+      items.push(menuItem('행 이름 고치기', focusLabelInput));
+      items.push(menuItem('행 삭제', removeSelection, { danger: true, key: 'Del' }));
+      return items;
+    }
+
+    if (sel.kind === 'bar') {
+      var bar = obj;
+      items.push(menuTitle('구간 · ' + itemName(bar.label, '(문구 없음)')));
+      items.push(menuSwatches(bar.color, true, function (v) {
+        if (v === undefined) delete bar.color;
+        else bar.color = v;
+      }));
+      items.push(menuRow('굵기', menuChips([[2, '얇게'], [3, '기본'], [4.5, '굵게'], [6, '아주']], bar.width || 3, function (v) { bar.width = +v; })));
+      items.push(menuRow('문구', menuChips([[0.15, '왼쪽'], [0.5, '중앙'], [0.85, '오른쪽']], bar.labelAt == null ? 0.5 : bar.labelAt, function (v) { bar.labelAt = +v; })));
+      items.push(menuSep());
+      if (canSplit(bar, t)) items.push(menuItem('여기서 나누기' + atLabel, function () { splitBar(sel.row, sel.index, t); }));
+      items.push(menuItem('뒤에 이어서 구간 추가', function () { appendBarAfter(sel.row, sel.index); }));
+      laneMenu(bar, sel.row).forEach(function (it) { items.push(it); });
+      items.push(menuSep());
+      items.push(menuItem('문구 고치기', focusLabelInput));
+      var cmpBar = compareToggleItem(bar);
+      if (cmpBar) items.push(cmpBar);
+      items.push(menuItem('복제', duplicateSelection));
+      items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
+      return items;
+    }
+
+    if (sel.kind === 'marker' || sel.kind === 'deliverable') {
+      var mk = obj;
+      var isDeliv = sel.kind === 'deliverable';
+      items.push(menuTitle((isDeliv ? '산출물' : '이벤트 점') + ' · ' + itemName(mk.label, '(문구 없음)')));
+      items.push(menuSwatches(mk.color || (isDeliv ? 'green' : 'navy'), false, function (v) { mk.color = v; }));
+      items.push(menuRow('모양', menuChips(
+        [['filled', '●'], ['circle', '○'], ['diamond', '◆'], ['triangle', '▼'], ['square', '■'], ['star', '★']],
+        mk.type || (isDeliv ? 'diamond' : 'filled'),
+        function (v) { mk.type = v; }
+      )));
+      items.push(menuRow('문구', menuChips([['above', '위'], ['below', '아래']], mk.labelPos || (isDeliv ? 'below' : 'above'), function (v) {
+        mk.labelPos = v;
+        if (v === 'below') mk.labelDy = 16;
+        else delete mk.labelDy;
+      })));
+      items.push(menuSep());
+      laneMenu(mk, sel.row).forEach(function (it) { items.push(it); });
+      items.push(menuItem('문구 고치기', focusLabelInput));
+      var cmpMk = compareToggleItem(mk);
+      if (cmpMk) items.push(cmpMk);
+      items.push(menuItem('복제', duplicateSelection));
+      items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
+      return items;
+    }
+
+    if (sel.kind === 'milestone') {
+      var ms = obj;
+      items.push(menuTitle('마일스톤 · ' + itemName(ms.title, '(문구 없음)')));
+      items.push(menuSwatches(ms.color || 'red', false, function (v) { ms.color = v; }));
+      items.push(menuRow('점선', menuChips([['dashed', '점선'], ['solid', '실선'], ['none', '없음']], ms.line || 'dashed', function (v) {
+        ms.line = v;
+        if (v === 'none') ms.fromRow = null;
+        else if (ms.fromRow === null || ms.fromRow === undefined) ms.fromRow = 0;
+      })));
+      items.push(menuRow('삼각형', menuChips([['true', '표시'], ['false', '숨김']], String(ms.triangle !== false), function (v) {
+        ms.triangle = v === 'true';
+      })));
+      if (typeof ms.fromRow === 'number' && rowLaneCount(cfg.rows[ms.fromRow]) > 1) {
+        var fromN = rowLaneCount(cfg.rows[ms.fromRow]);
+        var fromOpts = [['auto', '자동']];
+        for (var fk = 0; fk < fromN; fk++) fromOpts.push([fk, (fk + 1) + '줄']);
+        items.push(menuRow('시작 줄', menuChips(fromOpts, typeof ms.fromLane === 'number' ? ms.fromLane : 'auto', function (v) {
+          if (v === 'auto') delete ms.fromLane;
+          else ms.fromLane = +v;
+        })));
+      }
+      if (typeof ms.row === 'number' && rowLaneCount(cfg.rows[ms.row]) > 1) {
+        var triN = rowLaneCount(cfg.rows[ms.row]);
+        var triOpts = [];
+        for (var tk = 0; tk < triN; tk++) triOpts.push([tk, (tk + 1) + '줄']);
+        items.push(menuRow('삼각형 줄', menuChips(triOpts, ms.lane || 0, function (v) {
+          if (+v) ms.lane = +v;
+          else delete ms.lane;
+        })));
+      }
+      items.push(menuSep());
+      if (typeof t === 'number' && Math.abs(t - api.scale.parse(ms.at)) > 0.01) {
+        items.push(menuItem('여기로 옮기기' + atLabel, function () {
+          ctx.pushHistory();
+          ms.at = fmt(t);
+          apply(false);
+        }));
+      }
+      items.push(menuItem('문구 고치기', focusLabelInput));
+      var cmpMs = compareToggleItem(ms);
+      if (cmpMs) items.push(cmpMs);
+      items.push(menuItem('복제', duplicateSelection));
+      items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
+      return items;
+    }
+
+    if (sel.kind === 'legendItem') {
+      var li = obj;
+      items.push(menuTitle('범례 항목 · ' + itemName(li.label, '(문구 없음)')));
+      if (li.type !== 'lineAlt') items.push(menuSwatches(li.color || 'sky', false, function (v) { li.color = v; }));
+      items.push(menuItem('◀ 앞으로', function () { moveLegendItem(-1); }, { disabled: sel.index === 0 }));
+      items.push(menuItem('뒤로 ▶', function () { moveLegendItem(1); }, { disabled: sel.index >= (cfg.legend.items || []).length - 1 }));
+      items.push(menuSep());
+      items.push(menuItem('+ 범례 항목', addLegendItem));
+      items.push(menuItem('문구 고치기', focusLabelInput));
+      items.push(menuItem('복제', duplicateSelection));
+      items.push(menuItem('삭제', removeSelection, { danger: true, key: 'Del' }));
+      return items;
+    }
+
+    if (sel.kind === 'legend') {
+      items.push(menuTitle('범례'));
+      items.push(menuItem('+ 범례 항목', addLegendItem));
+      items.push(menuItem('범례 숨기기', removeSelection, { danger: true }));
+      return items;
+    }
+
+    if (sel.kind === 'compareStyle') {
+      var key = sel.part || 'add';
+      items.push(menuTitle('비교 표시 · ' + (COMPARE_KEYS[key] || key)));
+      items.push(menuSwatches(obj.fill, false, function (v) { obj.fill = v; }, true));
+      items.push(menuItem('기본 색으로', function () {
+        ctx.pushHistory();
+        var def = (GanttCompare.DEFAULT_STYLE && GanttCompare.DEFAULT_STYLE[key]) || {};
+        obj.fill = def.fill;
+        obj.label = def.label;
+        apply(false);
+      }));
+      return items;
+    }
+
+    return items;
+  }
+
+  function showMenu(x, y, t) {
+    closeMenu();
+    menuAt = { x: x, y: y, t: t };
+    var items = buildMenuItems(t);
+    if (!items.length) return;
+    menuEl = h('div', { class: 'ctx-menu', role: 'menu' }, items);
+    menuEl.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    document.body.appendChild(menuEl);
+    var w = menuEl.offsetWidth;
+    var hh = menuEl.offsetHeight;
+    var left = Math.min(x, window.innerWidth - w - 6);
+    var top = y + hh > window.innerHeight - 6 ? Math.max(6, window.innerHeight - hh - 6) : y;
+    menuEl.style.left = Math.max(6, left) + 'px';
+    menuEl.style.top = top + 'px';
+  }
+
+  function onContextMenu(event) {
+    event.preventDefault();
+    var t = clickTime(event.clientX);
+    var node = pickHitNode(event);
+    var meta = node ? metaFromNode(node) : null;
+    if (!meta) {
+      selection = null;
+    } else if (meta.kind === 'compareStyle') {
+      selection = { kind: 'compareStyle', part: meta.part, row: null, index: null };
+    } else {
+      selection = {
+        kind: meta.kind,
+        row: meta.row,
+        index: meta.index,
+        part: null,
+        lane: meta.kind === 'row' ? meta.lane || 0 : null,
+        compareType: meta.compareType || null
+      };
+    }
+    apply(false);
+    showMenu(event.clientX, event.clientY, t);
+  }
+
   /* ------------------------------------------------------------------- 키보드 */
 
   function nudgeVertical(obj, kind, part, dir, coarse) {
@@ -1661,7 +2068,22 @@
   global.GanttEditor = {
     init: function (context) {
       ctx = context;
-      document.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keydown', function (event) {
+        if (menuEl && event.key === 'Escape') {
+          closeMenu();
+          event.preventDefault();
+          return;
+        }
+        onKeyDown(event);
+      });
+      document.addEventListener('mousedown', function (event) {
+        if (menuEl && !menuEl.contains(event.target)) closeMenu();
+      }, true);
+      window.addEventListener('resize', closeMenu);
+      window.addEventListener('blur', closeMenu);
+      document.addEventListener('scroll', function (event) {
+        if (menuEl && !menuEl.contains(event.target)) closeMenu();
+      }, true);
       /* 차트 위에서 더블클릭하면 문구 입력칸으로 바로 이동 */
       document.addEventListener('dblclick', function (event) {
         if (!selection || !event.target.closest) return;
@@ -1673,6 +2095,7 @@
       svg = svgNode;
       api = svgNode.__gantt;
       svg.addEventListener('mousedown', onMouseDown);
+      svg.addEventListener('contextmenu', onContextMenu);
       if (!opts || opts.keepInspector !== true) buildInspector();
     },
     getSelection: function () {
