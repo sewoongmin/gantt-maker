@@ -2409,6 +2409,23 @@
       document.addEventListener('scroll', function (event) {
         if (menuEl && !menuEl.contains(event.target)) closeMenu();
       }, true);
+      /* 그림 바깥 여백까지 포함한 차트 카드 전체에서 우클릭 메뉴 · 빈 곳 클릭 시 선택 해제 */
+      function inChartCard(event) {
+        if (!svg || !document.body.contains(svg) || !document.body.classList.contains('edit-on')) return false;
+        var el = event.target;
+        if (!el || !el.closest || !el.closest('#chart')) return false;
+        return !el.closest('input, textarea, select, [contenteditable="true"]');
+      }
+      document.addEventListener('contextmenu', function (event) {
+        if (inChartCard(event)) onContextMenu(event);
+      });
+      document.addEventListener('mousedown', function (event) {
+        if (event.button !== 0 || !inChartCard(event) || svg.contains(event.target)) return;
+        if (selection) {
+          selection = null;
+          apply(false);
+        }
+      });
       /* 차트 위에서 더블클릭하면 문구 입력칸으로 바로 이동 */
       document.addEventListener('dblclick', function (event) {
         if (!selection || !event.target.closest) return;
@@ -2420,7 +2437,6 @@
       svg = svgNode;
       api = svgNode.__gantt;
       svg.addEventListener('mousedown', onMouseDown);
-      svg.addEventListener('contextmenu', onContextMenu);
       if (!opts || opts.keepInspector !== true) buildInspector();
     },
     getSelection: function () {
