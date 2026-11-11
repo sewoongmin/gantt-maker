@@ -331,11 +331,99 @@
         meta.kind === 'milestone'
           ? obj.titleDy || 0
           : pickNum(obj.labelDy, defaultLabelDy(obj, meta.kind)),
+      /* Ctrl(맥 ⌘)을 누른 채 시작하면 원본은 두고 복사본을 끌어 옮김 */
+      copy: !!(event.ctrlKey || event.metaKey) && (meta.part === 'body' || meta.part === 'at'),
+      /* 구간 몸통 · 점/산출물은 위아래로 끌면 다른 행·줄로 */
+      canRelocate: ROW_ITEM_KEY[meta.kind] !== undefined && (meta.part === 'body' || meta.part === 'at'),
       moved: false
     };
+    if (drag.copy) document.body.classList.add('drag-copy');
 
     document.addEventListener('mousemove', onDragMove);
     document.addEventListener('mouseup', onDragEnd);
+  }
+
+  var ROW_ITEM_KEY = { bar: 'bars', marker: 'markers', deliverable: 'deliverables' };
+
+  function clientToSvgY(clientY) {
+    var rect = svg.getBoundingClientRect();
+    if (!rect.height) return 0;
+    return (clientY - rect.top) * (api.totalHeight / rect.height);
+  }
+
+  /* 커서 아래의 행 · 줄 (표 밖이면 null) */
+  function rowLaneAt(clientY) {
+    var y = clientToSvgY(clientY);
+    for (var i = 0; i < api.rowTops.length; i++) {
+      var top = api.rowTops[i];
+      if (y < top || y >= top + api.rowHeights[i]) continue;
+      var lane = 0;
+      (api.rowLaneBands && api.rowLaneBands[i] || []).forEach(function (b, k) {
+        if (y >= b.top) lane = k;
+      });
+      return { row: i, lane: lane };
+    }
+    return null;
+  }
+
+  function newId(prefix) {
+    return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  }
+
+  /* 드래그 첫 움직임에서 복사본을 만들고, 이후엔 복사본을 끕니다 */
+  function makeDragCopy(obj) {
+    var cfg = ctx.getConfig();
+    var m = drag.meta;
+    var copy = JSON.parse(JSON.stringify(obj));
+    if (m.kind === 'milestone') {
+      copy.id = newId('ms-');
+      cfg.milestones.push(copy);
+      drag.meta = { kind: m.kind, row: null, index: cfg.milestones.length - 1, part: m.part };
+    } else {
+      var key = ROW_ITEM_KEY[m.kind];
+      copy.id = newId(m.kind === 'bar' ? 'bar-' : m.kind === 'marker' ? 'mk-' : 'dv-');
+      delete copy.compareHidden;
+      if (m.kind === 'bar' && !copy.color) copy.color = autoColorOf(cfg.rows[m.row], m.index);
+      var list = cfg.rows[m.row][key];
+      list.push(copy);
+      drag.meta = { kind: m.kind, row: m.row, index: list.length - 1, part: m.part };
+    }
+    selection = { kind: drag.meta.kind, row: drag.meta.row, index: drag.meta.index, part: m.part };
+    return copy;
+  }
+
+  /* 자동 색 구간은 행을 옮기면 교대 순서가 바뀌므로 지금 보이는 색으로 고정 */
+  function autoColorOf(row, index) {
+    var bar = row.bars[index];
+    if (!bar || bar.color) return bar ? bar.color : null;
+    var cycle = ctx.getConfig().barColorCycle;
+    if (!cycle || !cycle.length) cycle = ['sky', 'navy'];
+    var n = 0;
+    for (var j = 0; j < index; j++) if (!row.bars[j].color) n++;
+    return cycle[n % cycle.length];
+  }
+
+  function freezeAutoColor(row, index) {
+    var bar = row.bars[index];
+    if (bar && !bar.color) bar.color = autoColorOf(row, index);
+  }
+
+  function relocateDragged(obj, target) {
+    var cfg = ctx.getConfig();
+    var m = drag.meta;
+    var key = ROW_ITEM_KEY[m.kind];
+    var from = cfg.rows[m.row];
+    var dest = cfg.rows[target.row];
+    if (!from || !dest) return obj;
+    if (m.kind === 'bar') freezeAutoColor(from, m.index);
+    from[key].splice(m.index, 1);
+    dest[key] = dest[key] || [];
+    setLane(obj, target.lane);
+    delete obj.dy;
+    dest[key].push(obj);
+    drag.meta = { kind: m.kind, row: target.row, index: dest[key].length - 1, part: m.part };
+    selection = { kind: m.kind, row: target.row, index: drag.meta.index, part: m.part };
+    return obj;
   }
 
   function onDragMove(event) {
@@ -366,10 +454,23 @@
     }
 
     var deltaPeriods = api.timeAtX(clientToSvgX(event.clientX)) - drag.origT;
-    if (Math.abs(deltaPeriods) < 0.001 && !drag.moved) return;
+
+    /* 세로로 조금 이상 움직였을 때만 행·줄 이동 (가로 드래그 중 흔들림 방지) */
+    var target = null;
+    if (drag.canRelocate && (drag.vertical || Math.abs(event.clientY - drag.clientY) / drag.unitY > 8)) {
+      target = rowLaneAt(event.clientY);
+      if (target && target.row === drag.meta.row && target.lane === laneOf(obj)) target = null;
+    }
+
+    if (Math.abs(deltaPeriods) < 0.001 && !target && !drag.moved) return;
     if (!drag.moved) {
       ctx.pushHistory();
       drag.moved = true;
+      if (drag.copy) obj = makeDragCopy(obj);
+    }
+    if (target) {
+      drag.vertical = true;
+      obj = relocateDragged(obj, target);
     }
 
     var total = api.scale.total;
@@ -398,6 +499,7 @@
   function onDragEnd() {
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
+    document.body.classList.remove('drag-copy');
     var moved = drag && drag.moved;
     drag = null;
     if (moved) apply(false);

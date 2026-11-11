@@ -375,6 +375,10 @@ body.edit-on .chart svg { user-select: none; }
   .inspector { flex: 1 1 100%; position: static; max-height: none; }
 }
 
+/* Ctrl 드래그 복사 중 */
+body.drag-copy,
+body.drag-copy * { cursor: copy !important; }
+
 /* ------------------------------------------------------------ 우클릭 메뉴 */
 .ctx-menu {
   position: fixed;
