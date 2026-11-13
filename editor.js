@@ -2090,6 +2090,7 @@
       items.push(menuSep());
       items.push(menuItem('PNG 저장', function () { toolbarClick('btnPng'); }));
       items.push(menuItem('SVG 저장', function () { toolbarClick('btnSvg'); }));
+      items.push(menuItem('PPT 저장', function () { toolbarClick('btnPptx'); }));
       items.push(menuItem('간트 내보내기 (JSON)', function () { toolbarClick('btnExportGantt'); }));
       return items;
     }

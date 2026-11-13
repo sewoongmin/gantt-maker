@@ -821,6 +821,26 @@
     }
   });
 
+  document.getElementById('btnPptx').addEventListener('click', function () {
+    var btn = this;
+    var slides =
+      compareOn() && svgBefore && svgAfter
+        ? [
+            { xml: Gantt.serialize(svgBefore), title: '변경 전', titleColor: '#475569' },
+            { xml: Gantt.serialize(svgAfter), title: '변경 후', titleColor: '#BE123C' }
+          ]
+        : [{ xml: Gantt.serialize(svg) }];
+    btn.disabled = true;
+    GanttPptx.exportPPTX(slides, 'gantt-' + fileStamp() + '.pptx', { title: config.title || '간트차트' })
+      .catch(function (e) {
+        message('PPT 저장 실패: ' + e.message, 'error');
+        alert('PPT 저장 실패: ' + e.message);
+      })
+      .then(function () {
+        btn.disabled = false;
+      });
+  });
+
   document.getElementById('btnPrint').addEventListener('click', function () {
     window.print();
   });
