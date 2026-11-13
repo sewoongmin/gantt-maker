@@ -393,6 +393,24 @@ body.edit-on .chart svg { user-select: none; }
 }
 .editor-toast.on { opacity: 1; transform: translate(-50%, 0); }
 
+/* 공유 링크 */
+.share-dialog {
+  width: min(640px, calc(100vw - 32px));
+  padding: 18px 20px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+  color: var(--ink);
+  font-size: 13px;
+}
+.share-dialog::backdrop { background: rgba(15, 23, 42, 0.25); }
+.share-dialog h3 { margin: 0 0 6px; font-size: 15px; }
+.share-desc { margin: 0 0 10px; line-height: 1.6; color: var(--muted); }
+.share-dialog input { width: 100%; box-sizing: border-box; font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.share-info { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.share-actions { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+.share-copied { margin-right: auto; font-size: 12px; color: #15803d; }
+
 /* Ctrl 드래그 복사 중 */
 body.drag-copy,
 body.drag-copy * { cursor: copy !important; }

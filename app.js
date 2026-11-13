@@ -969,6 +969,173 @@
     message('chart-config.js 기준으로 되돌렸습니다.', 'ok');
   });
 
+  /* --------------------------------------------------------------- 공유 링크 */
+
+  /* 링크 = 페이지 주소 + #share=<형식>.<base64url> — 내용은 서버로 가지 않고 주소 안에만 있습니다 */
+  var SHARE_PARAM = 'share=';
+  var SHARE_WARN_LEN = 8000;
+
+  function bytesToB64url(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function b64urlToBytes(s) {
+    var b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var bin = atob(b64);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function streamBytes(bytes, transform) {
+    var stream = new Blob([bytes]).stream().pipeThrough(transform);
+    return new Response(stream).arrayBuffer().then(function (buf) {
+      return new Uint8Array(buf);
+    });
+  }
+
+  function encodeShare(payload) {
+    var bytes = new TextEncoder().encode(JSON.stringify(payload));
+    if (typeof CompressionStream === 'undefined') return Promise.resolve('j0.' + bytesToB64url(bytes));
+    return streamBytes(bytes, new CompressionStream('deflate-raw')).then(function (z) {
+      return 'z1.' + bytesToB64url(z);
+    });
+  }
+
+  function decodeShare(token) {
+    var dot = token.indexOf('.');
+    var kind = token.slice(0, dot);
+    var bytes = b64urlToBytes(token.slice(dot + 1));
+    var job;
+    if (kind === 'z1') {
+      if (typeof DecompressionStream === 'undefined') {
+        return Promise.reject(new Error('이 브라우저는 압축된 공유 링크를 열 수 없습니다. 최신 Chrome / Edge 로 열어 주세요.'));
+      }
+      job = streamBytes(bytes, new DecompressionStream('deflate-raw'));
+    } else if (kind === 'j0') {
+      job = Promise.resolve(bytes);
+    } else {
+      return Promise.reject(new Error('알 수 없는 공유 링크 형식입니다.'));
+    }
+    return job.then(function (raw) {
+      var data = JSON.parse(new TextDecoder().decode(raw));
+      if (!data || !data.config || !data.config.rows) throw new Error('링크 안에 간트 내용이 없습니다.');
+      return data;
+    });
+  }
+
+  function shareUrl(token) {
+    return location.href.split('#')[0].split('?')[0] + '#' + SHARE_PARAM + token;
+  }
+
+  var shareDialog = document.getElementById('shareDialog');
+  var shareUrlEl = document.getElementById('shareUrl');
+  var shareInfoEl = document.getElementById('shareInfo');
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return false; });
+    }
+    shareUrlEl.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    return Promise.resolve(ok);
+  }
+
+  document.getElementById('btnShare').addEventListener('click', function () {
+    var withBaseline = baseline && !configsLookSame(baseline, config);
+    var payload = { v: 1, config: config };
+    if (withBaseline) {
+      payload.baseline = baseline;
+      payload.compare = compareOn();
+    }
+    encodeShare(payload).then(function (token) {
+      var url = shareUrl(token);
+      shareUrlEl.value = url;
+      var info = '링크 길이 ' + url.length.toLocaleString() + '자' + (withBaseline ? ' · 변경 비교 기준 포함' : '') + '.';
+      if (url.length > SHARE_WARN_LEN) {
+        info += ' 링크가 길어 메신저·메일에서 잘릴 수 있습니다. 잘리면 「간트 내보내기」 파일로 보내 주세요.';
+      }
+      shareInfoEl.textContent = info;
+      shareDialog.showModal();
+      shareUrlEl.focus();
+      shareUrlEl.select();
+      return copyText(url).then(function (ok) {
+        document.getElementById('shareCopied').textContent = ok ? '클립보드에 복사했습니다.' : '「복사」를 눌러 링크를 복사하세요.';
+      });
+    }).catch(function (e) {
+      alert('공유 링크를 만들지 못했습니다: ' + e.message);
+    });
+  });
+
+  document.getElementById('btnShareCopy').addEventListener('click', function () {
+    copyText(shareUrlEl.value).then(function (ok) {
+      document.getElementById('shareCopied').textContent = ok ? '클립보드에 복사했습니다.' : '복사하지 못했습니다. 링크를 직접 선택해 복사해 주세요.';
+    });
+  });
+
+  document.getElementById('btnShareClose').addEventListener('click', function () {
+    shareDialog.close();
+  });
+
+  function clearShareHash() {
+    window.history.replaceState(null, '', location.href.split('#')[0]);
+  }
+
+  /* 받은 링크를 열기 전에 지금 작업을 버전으로 보관해 둡니다 */
+  function backupBeforeShare(incoming) {
+    if (configsLookSame(config, baseConfig) || configsLookSame(config, incoming)) return '';
+    if (versions.length >= MAX_VERSIONS) return null;
+    var name = '공유 링크 열기 전 ' + versionStamp();
+    versions.unshift({
+      id: 'v-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: name,
+      savedAt: versionStamp(),
+      data: cloneChart(config)
+    });
+    persistVersions();
+    refreshVersionSelect();
+    return name;
+  }
+
+  function openShareFromHash() {
+    var hash = location.hash.replace(/^#/, '');
+    if (hash.indexOf(SHARE_PARAM) !== 0) return;
+    decodeShare(hash.slice(SHARE_PARAM.length)).then(function (data) {
+      var hasWork = !configsLookSame(config, baseConfig) && !configsLookSame(config, data.config);
+      var full = hasWork && versions.length >= MAX_VERSIONS;
+      var text =
+        '공유 링크의 간트를 엽니다.' +
+        (data.baseline ? '\n변경 비교 기준도 링크의 것으로 바뀝니다.' : '') +
+        (hasWork
+          ? full
+            ? '\n\n버전 목록이 가득 차서 지금 작업을 보관할 수 없습니다. 「되돌리기」로만 되돌릴 수 있습니다.'
+            : '\n\n지금 작업은 「공유 링크 열기 전」 버전으로 보관됩니다.'
+          : '');
+      if (hasWork && !confirm(text)) {
+        clearShareHash();
+        return;
+      }
+      var kept = backupBeforeShare(data.config);
+      document.getElementById('compareMode').checked = !!(data.baseline && data.compare);
+      applyLoadedConfig({ config: data.config, baseline: data.baseline || null }, '공유 링크의 간트');
+      clearShareHash();
+      setTimeout(function () {
+        saveState(kept ? '공유 링크 열림 · 이전 작업은 「' + kept + '」 버전' : '공유 링크 열림');
+      }, 400);
+    }).catch(function (e) {
+      clearShareHash();
+      alert('공유 링크를 열 수 없습니다: ' + e.message);
+    });
+  }
+
+  window.addEventListener('hashchange', openShareFromHash);
+
   /* ------------------------------------------------------------------ 시작 */
 
   if (!localStorage.getItem(BASELINE_KEY)) saveBaseline(baseConfig);
@@ -976,4 +1143,5 @@
   updateUndo();
   draw();
   saveState(localStorage.getItem(STORAGE_KEY) ? '브라우저 임시 저장본 사용 중' : '파일 기준');
+  openShareFromHash();
 })();

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>연구개발 추진일정 (간트차트)</title>
-  <link rel="stylesheet" href="style.css?v=20261113-1" />
+  <link rel="stylesheet" href="style.css?v=20261113-2" />
 </head>
 <body>
   <header class="toolbar no-print">
@@ -69,6 +69,7 @@
       <button id="btnPptx" title="PowerPoint 슬라이드로 저장 — 막대·글자가 도형/텍스트 상자라 PPT에서 바로 고칠 수 있습니다">PPT 저장</button>
       <button id="btnPrint">인쇄 / PDF</button>
       <span class="sep"></span>
+      <button id="btnShare" title="지금 간트를 담은 링크를 만듭니다. 받은 사람이 링크를 열면 같은 차트가 열리고 이어서 수정할 수 있습니다">공유 링크</button>
       <button id="btnExportGantt" title="현재 간트·비교 기준을 JSON으로 저장">간트 내보내기</button>
       <label class="file-btn" title="내보낸 JSON / chart-config.js 불러오기">간트 불러오기<input id="fileConfig" type="file" accept=".js,.json,.txt,.gantt.json" hidden /></label>
       <button id="btnSaveConfig" title="프로젝트용 chart-config.js 파일로 저장">config.js 저장</button>
@@ -126,6 +127,21 @@
     <p id="editorMsg" class="msg"></p>
   </section>
 
+  <dialog id="shareDialog" class="share-dialog no-print">
+    <h3>공유 링크</h3>
+    <p class="share-desc">
+      이 링크를 받은 사람이 열면 지금 차트가 그대로 열리고, 이어서 고칠 수 있습니다.
+      링크를 만든 <b>지금 시점</b>의 내용이 담기며, 이후 수정은 반영되지 않습니다(고친 뒤 다시 만들어 보내 주세요).
+    </p>
+    <input id="shareUrl" type="text" readonly />
+    <p id="shareInfo" class="share-info"></p>
+    <div class="share-actions">
+      <span id="shareCopied" class="share-copied"></span>
+      <button id="btnShareCopy" class="primary">복사</button>
+      <button id="btnShareClose">닫기</button>
+    </div>
+  </dialog>
+
   <div class="workspace">
     <main id="chart" class="chart"></main>
     <aside id="inspector" class="inspector no-print"></aside>
@@ -138,7 +154,7 @@
     <span class="hint-shorten">단축</span> / <span class="hint-delay">지연</span> 알약은
     클릭하면 색을 바꿀 수 있고, 드래그·↑↓로 높이를 조절할 수 있습니다.
     <b>버전 저장</b>으로 원하는 시점(초안·최종안 등)을 남겨 두고, <b>이 버전으로</b> / <b>변경 전으로</b> 돌아갈 수 있습니다.
-    <b>간트 내보내기 / 불러오기</b>로 일정을 파일로 보관·이어서 수정하세요.
+    <b>간트 내보내기 / 불러오기</b>로 일정을 파일로 보관·이어서 수정하고, <b>공유 링크</b>로 다른 사람에게 같은 차트를 바로 열어 보게 할 수 있습니다. <b>PPT 저장</b>은 PowerPoint에서 고칠 수 있는 도형으로 내보냅니다.
     <b>기간 축약</b>으로 2028~2029처럼 비슷한 연도를 물결로 접으면 그림이 짧아지고 글자가 커집니다.
     기간이 짧으면 <b>표시 단위</b>가 자동으로 1월~12월이 되고, <b>그림 가로 폭</b>·<b>글자 크기</b>로 문서에 넣을 크기를 맞출 수 있습니다.
     막대를 다른 행으로 끌면 그 행으로 옮겨지고, <b>Ctrl</b>을 누른 채 끌면 복사됩니다.
@@ -146,11 +162,11 @@
     <b>Delete</b> 삭제 · <b>Shift+↑↓</b> 큰 이동 · <b>Alt+↑↓</b> 줄 이동 · <b>Ctrl+C/X/V</b> 복사·잘라내기·붙여넣기 · <b>Ctrl+D</b> 복제 · <b>Ctrl+Z</b> 되돌리기.
   </p>
 
-  <script src="chart-config.js?v=20261113-1"></script>
-  <script src="compare.js?v=20261113-1"></script>
-  <script src="gantt.js?v=20261113-1"></script>
-  <script src="pptx.js?v=20261113-1"></script>
-  <script src="editor.js?v=20261113-1"></script>
-  <script src="app.js?v=20261113-1"></script>
+  <script src="chart-config.js?v=20261113-2"></script>
+  <script src="compare.js?v=20261113-2"></script>
+  <script src="gantt.js?v=20261113-2"></script>
+  <script src="pptx.js?v=20261113-2"></script>
+  <script src="editor.js?v=20261113-2"></script>
+  <script src="app.js?v=20261113-2"></script>
 </body>
 </html>
